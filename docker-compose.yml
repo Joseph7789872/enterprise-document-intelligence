@@ -1,0 +1,72 @@
+# Local development infrastructure for the Enterprise Document Intelligence Platform.
+#
+# By default this brings up only Postgres (pgvector) + Redis; run the backend on the host
+# via `make run`. To run the full stack in containers instead, use the `full` profile:
+#
+#   docker compose --profile full up --build
+#
+# For production, see docker-compose.prod.yml; for self-hosted LLM, see
+# deploy/docker-compose.selfhosted.yml.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: edip_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-edip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-edip_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-edip}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-edip} -d ${POSTGRES_DB:-edip}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: edip_redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional containerized app stack — `docker compose --profile full up --build`.
+  backend:
+    profiles: ["full"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-edip}:${POSTGRES_PASSWORD:-edip_dev_password}@postgres:5432/${POSTGRES_DB:-edip}
+      LLM_PROVIDER: fake
+      EMBEDDING_PROVIDER: fake
+      CORS_ALLOW_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+  frontend:
+    profiles: ["full"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

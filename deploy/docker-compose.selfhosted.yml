@@ -1,0 +1,113 @@
+# Self-hosted EDIP stack (Phase 7): Postgres + vLLM (LLM) + TEI (embeddings) + backend.
+#
+# This is the reference topology for private_cloud / air-gapped deployments: every
+# inference dependency runs inside this compose network, so no document-derived data
+# leaves the customer's infrastructure. Bring it up with:
+#
+#   cd deploy && docker compose -f docker-compose.selfhosted.yml --env-file env.air-gapped.example up -d
+#
+# Air-gapped note: pre-pull all images and model weights into the environment first;
+# none of these services need outbound internet at runtime once the models are cached.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-edip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-edip_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-edip}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-edip} -d ${POSTGRES_DB:-edip}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Self-hosted LLM, OpenAI-compatible API on :8000/v1. Requires an NVIDIA GPU + the
+  # NVIDIA Container Toolkit. Swap the model via SELF_HOSTED_LLM_MODEL.
+  vllm:
+    image: vllm/vllm-openai:latest
+    command: ["--model", "${SELF_HOSTED_LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"]
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/health'); \" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 300s   # model load can take minutes
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+
+  # Self-hosted embeddings, OpenAI-compatible API on :80/v1. Keeps torch out of the
+  # backend image. (Alternatively set EMBEDDING_PROVIDER=sentence_transformers and build
+  # the backend with `--extra local` to embed in-process — see deploy/README.md.)
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "${LOCAL_EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}"]
+    volumes:
+      - tei_cache:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+      tei:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-air_gapped}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-edip}:${POSTGRES_PASSWORD:-edip_dev_password}@postgres:5432/${POSTGRES_DB:-edip}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set a strong JWT secret}
+      MASTER_KEK: ${MASTER_KEK:?set a base64 32-byte master KEK}
+      # Self-hosted LLM (OpenAI-compatible) — baseline + sensitive routing target.
+      LLM_PROVIDER: openai_compatible
+      LLM_BASE_URL: http://vllm:8000/v1
+      SELF_HOSTED_LLM_MODEL: ${SELF_HOSTED_LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      # Self-hosted embeddings via TEI's OpenAI-compatible endpoint.
+      EMBEDDING_PROVIDER: openai_compatible
+      EMBEDDING_BASE_URL: http://tei:80/v1
+      EMBEDDING_MODEL: ${LOCAL_EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
+      # No cloud sub-processors in this topology.
+      OBSERVABILITY_PROVIDER: fake
+      EVALS_PROVIDER: fake
+      RERANKER_PROVIDER: fake
+    ports:
+      - "8000:8000"
+    # Run migrations then serve. (For production, run migrations as a separate one-shot.)
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  hf_cache:
+  tei_cache:

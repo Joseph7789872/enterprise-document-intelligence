@@ -1,0 +1,60 @@
+# Production-style compose: Postgres + backend (migrated) + frontend.
+# Cloud-provider variant (SaaS / single-tenant). For self-hosted LLM + air-gapped, use
+# deploy/docker-compose.selfhosted.yml instead.
+#
+#   cp .env.example .env   # fill secrets + provider keys
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-edip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong DB password}
+      POSTGRES_DB: ${POSTGRES_DB:-edip}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-edip} -d ${POSTGRES_DB:-edip}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-saas}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-edip}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-edip}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set a strong JWT secret}
+      MASTER_KEK: ${MASTER_KEK:?set a base64 32-byte master KEK}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
+      LOG_FORMAT: json
+    ports:
+      - "8000:8000"
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

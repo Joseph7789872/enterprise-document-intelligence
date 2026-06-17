@@ -1,0 +1,61 @@
+# Deploy template — builds + pushes container images and runs DB migrations as a release
+# step. Triggered on version tags (vX.Y.Z) or manual dispatch. This is a TEMPLATE: wire it
+# to your registry + host, and add the referenced secrets, before relying on it.
+#
+# NOTE: only runs from the repository root (see ci.yml note).
+
+name: deploy
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build + push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.ref_name }}
+      - name: Build + push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          build-args: NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.ref_name }}
+
+  migrate-and-release:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - uses: actions/checkout@v4
+      # Run migrations against the production DB before flipping traffic. Example:
+      #   - uses: astral-sh/setup-uv@v5
+      #   - run: cd backend && uv sync && uv run alembic upgrade head
+      #     env: { DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }} }
+      #
+      # Then deploy (choose your host), e.g. Fly.io:
+      #   - uses: superfly/flyctl-actions/setup-flyctl@master
+      #   - run: flyctl deploy --remote-only
+      #     env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
+      - name: Placeholder
+        run: echo "Wire up migrations + deploy for your target host."

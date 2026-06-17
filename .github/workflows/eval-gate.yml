@@ -1,0 +1,88 @@
+# RAGAS evaluation + CI quality gate (Phase 4).
+#
+# NOTE: GitHub Actions only runs workflows found under `.github/workflows/` at the
+# repository root. This project is expected to become its own repository; if it is
+# nested inside another repo, move this file to that repo root (and adjust the
+# `working-directory` / paths below) for it to be picked up.
+#
+# Two gates:
+#   * tests       — always runs, no secrets. Runs the full suite including the
+#                   deterministic FakeEvaluator eval gate. Blocks every PR.
+#   * ragas-eval  — runs the REAL RAGAS gate against Postgres using an LLM judge.
+#                   Needs the ANTHROPIC_API_KEY secret; runs on push to main and on
+#                   manual dispatch. A sub-threshold score fails the job → blocks deploy.
+
+name: eval-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Sync deps
+        run: uv sync
+      - name: Lint + type-check
+        run: |
+          uv run ruff check .
+          uv run mypy app
+      - name: Tests + deterministic eval gate
+        env:
+          ENVIRONMENT: development
+        # FakeEvaluator/FakeLLM — no key, no network. The eval gate tests assert
+        # the ground-truth dataset clears thresholds.
+        run: uv run pytest -m "not ragas" -q
+
+  ragas-eval:
+    runs-on: ubuntu-latest
+    # Only when the Anthropic key is available (not on forked-PRs without secrets).
+    if: ${{ github.event_name != 'pull_request' && secrets.ANTHROPIC_API_KEY != '' }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: edip
+          POSTGRES_PASSWORD: edip_dev_password
+          POSTGRES_DB: edip
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U edip"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ENVIRONMENT: staging
+      DATABASE_URL: postgresql+asyncpg://edip:edip_dev_password@localhost:5432/edip
+      JWT_SECRET_KEY: ${{ secrets.CI_JWT_SECRET_KEY }}
+      MASTER_KEK: ${{ secrets.CI_MASTER_KEK }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      EVALS_PROVIDER: ragas
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Sync deps (with evals extra)
+        run: uv sync --extra evals
+      - name: Migrate
+        run: uv run alembic upgrade head
+      - name: Seed eval corpus
+        run: uv run python ../evals/seed_eval_corpus.py
+      - name: Run RAGAS gate
+        # Non-zero exit (sub-threshold means or run error) fails the job → blocks deploy.
+        run: uv run python ../evals/run_evals.py --provider ragas --git-sha "${{ github.sha }}"

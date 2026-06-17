@@ -1,0 +1,41 @@
+{
+  "name": "edip_ground_truth_v1",
+  "items": [
+    {
+      "id": "hr-remote-01",
+      "question": "How many days per week can full-time employees work remotely?",
+      "ground_truth": "Full-time employees may work remotely up to three days per week, subject to manager approval.",
+      "source_documents": ["hr_policy.txt"]
+    },
+    {
+      "id": "hr-vacation-01",
+      "question": "How many paid vacation days do employees accrue each year?",
+      "ground_truth": "Employees accrue twenty days of paid vacation leave each year.",
+      "source_documents": ["hr_policy.txt"]
+    },
+    {
+      "id": "hr-expense-01",
+      "question": "What is the deadline for submitting business expenses for reimbursement?",
+      "ground_truth": "Business expenses must be submitted within thirty days of purchase, with itemized receipts.",
+      "source_documents": ["hr_policy.txt"]
+    },
+    {
+      "id": "logistics-coldchain-01",
+      "question": "What temperature range must temperature-sensitive cold chain shipments be kept within?",
+      "ground_truth": "Temperature-sensitive shipments must be kept between two and eight degrees Celsius.",
+      "source_documents": ["logistics_sop.txt"]
+    },
+    {
+      "id": "logistics-damaged-01",
+      "question": "How soon must damaged goods be reported to the warehouse supervisor after delivery?",
+      "ground_truth": "Damaged goods must be reported to the warehouse supervisor within twenty-four hours of delivery.",
+      "source_documents": ["logistics_sop.txt"]
+    },
+    {
+      "id": "logistics-pallet-01",
+      "question": "What must happen to every outbound pallet before it leaves the loading dock?",
+      "ground_truth": "Every outbound pallet must be scanned and assigned a tracking number before it leaves the loading dock.",
+      "source_documents": ["logistics_sop.txt"]
+    }
+  ]
+}

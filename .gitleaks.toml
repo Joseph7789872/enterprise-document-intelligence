@@ -1,0 +1,21 @@
+# gitleaks configuration. Extends the default ruleset and allowlists the project's
+# example/test placeholders so the scan stays signal-rich (real secrets only).
+title = "EDIP gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Non-secret placeholders used in examples and tests."
+paths = [
+  '''.*\.env\.example$''',
+  '''deploy/env\..*\.example$''',
+]
+regexes = [
+  # The documented insecure dev defaults (clearly non-production).
+  '''change-me-dev-only-not-for-production''',
+  '''dev-only-insecure-master-kek-32b''',
+  '''edip_dev_password''',
+  '''correct horse battery staple''',
+  '''not-needed''',
+]

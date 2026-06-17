@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.Python
+
+# Environments & secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# uv
+# (uv.lock IS committed; the cache is not)
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local data
+*.sqlite
+*.sqlite3
+*.db
+
+# Runtime logs + local storage (encrypted blobs / uploaded data)
+*.log
+var/
+backend/var/
+
+# Node / Next.js (frontend)
+node_modules/
+.next/
+out/
+*.tsbuildinfo

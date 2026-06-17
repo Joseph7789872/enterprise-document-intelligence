@@ -1,0 +1,100 @@
+# Continuous integration: backend lint/type/test, frontend build, secret + dependency
+# scanning. Blocks every PR.
+#
+# NOTE: GitHub Actions only runs workflows under `.github/workflows/` at the REPOSITORY
+# root. This project is expected to become its own repo; if it is nested inside another
+# repo, move this file (and adjust the working-directory paths) to that repo root.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Sync deps
+        run: uv sync
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type-check
+        run: uv run mypy app
+      - name: Tests (offline, includes the deterministic eval gate)
+        env:
+          ENVIRONMENT: development
+        run: uv run pytest -m "not ragas" -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm ci
+      - name: Build
+        run: npm run build
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trivy-fs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan (vulns + misconfig + secrets)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  image-scan:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t edip-backend:ci ./backend
+      - name: Build frontend image
+        run: docker build -t edip-frontend:ci --build-arg NEXT_PUBLIC_API_URL=https://api.example.com ./frontend
+      - name: Trivy scan — backend image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: edip-backend:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Trivy scan — frontend image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: edip-frontend:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
