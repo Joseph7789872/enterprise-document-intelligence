@@ -136,6 +136,8 @@ async def test_stream_emits_tokens(client, acme) -> None:
     assert r.status_code == 200
     assert "event: token" in r.text
     assert "event: done" in r.text
+    # The done event carries confidence so the AE UI can surface a "not fully sure" banner.
+    assert '"confidence"' in r.text
 
 
 @pytest.mark.asyncio

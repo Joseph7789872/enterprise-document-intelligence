@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AuthorizationError
 from app.models.audit_log import AuditAction
-from app.models.document import Document
+from app.models.document import ContentVisibility, Document
 from app.models.document_access_control import DocumentAccessControl, PrincipalType
 from app.models.group_membership import GroupMembership
 from app.models.user import UserRole
@@ -38,7 +38,13 @@ class Permission(str, enum.Enum):
 
 
 # Roles that implicitly hold every permission on every document in their tenant.
+# In the sales product these are the manager/admin roles (OWNER/ADMIN); MEMBER is an AE.
 _PRIVILEGED_ROLES = frozenset({UserRole.OWNER, UserRole.ADMIN})
+
+# Permissions an AE (non-privileged) gets on any rep-visible content without an explicit
+# grant. Mutating/managing permissions (DELETE/REVIEW/MANAGE) still require ownership or a
+# grant, so visibility never lets a rep delete or re-share content.
+_VISIBILITY_PERMISSIONS = frozenset({Permission.VIEW, Permission.QUERY})
 
 
 def is_privileged(role: UserRole) -> bool:
@@ -82,8 +88,9 @@ async def accessible_document_ids(
 ) -> set[uuid.UUID] | None:
     """Document ids the user may act on with ``permission``.
 
-    Returns ``None`` (unrestricted) for OWNER/ADMIN. Otherwise the set of owned docs +
-    docs granted the permission directly or via a group. An empty set means no access.
+    Returns ``None`` (unrestricted) for managers (OWNER/ADMIN). Otherwise the set of
+    owned docs + all rep-visible content (for VIEW/QUERY) + docs granted the permission
+    directly or via a group. An empty set means no access.
     """
     if is_privileged(role):
         return None
@@ -97,6 +104,17 @@ async def accessible_document_ids(
         )
     )
     allowed: set[uuid.UUID] = set(owned.all())
+
+    # Rep-visible content is readable/queryable by every AE without an explicit grant.
+    if permission in _VISIBILITY_PERMISSIONS:
+        rep_visible = await db.scalars(
+            select(Document.id).where(
+                Document.tenant_id == tenant_id,
+                Document.visibility == ContentVisibility.REP_VISIBLE,
+                Document.deleted_at.is_(None),
+            )
+        )
+        allowed |= set(rep_visible.all())
 
     group_ids = await user_group_ids(db, tenant_id=tenant_id, user_id=user_id)
     acls = await db.scalars(
@@ -125,6 +143,12 @@ async def can_access_document(
     if document is None or document.tenant_id != tenant_id or document.deleted_at is not None:
         return False
     if document.owner_user_id == user_id:
+        return True
+    # Rep-visible content is readable/queryable by every AE without an explicit grant.
+    if (
+        permission in _VISIBILITY_PERMISSIONS
+        and document.visibility == ContentVisibility.REP_VISIBLE
+    ):
         return True
 
     group_ids = await user_group_ids(db, tenant_id=tenant_id, user_id=user_id)

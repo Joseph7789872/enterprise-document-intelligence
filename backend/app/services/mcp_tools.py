@@ -132,7 +132,8 @@ async def list_documents(db: AsyncSession, principal: CurrentUser) -> dict[str, 
                 "id": str(d.id),
                 "filename": d.filename,
                 "status": d.status.value,
-                "classification_level": d.classification_level.value,
+                "content_type": d.content_type.value,
+                "visibility": d.visibility.value,
                 "chunk_count": d.chunk_count,
             }
             for d in docs
@@ -167,10 +168,10 @@ async def get_document(
     return {
         "id": str(document.id),
         "filename": document.filename,
-        "content_type": document.content_type,
+        "mime_type": document.mime_type,
         "status": document.status.value,
-        "classification_level": document.classification_level.value,
-        "department": document.department,
+        "content_type": document.content_type.value,
+        "visibility": document.visibility.value,
         "page_count": document.page_count,
         "chunk_count": document.chunk_count,
         "created_at": document.created_at.isoformat(),

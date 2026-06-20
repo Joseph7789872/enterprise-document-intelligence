@@ -13,15 +13,16 @@ from app.errors import register_exception_handlers
 from app.version import __version__
 
 _DESCRIPTION = """\
-Secure, multi-tenant **Enterprise Document Intelligence Platform** — query private
-company documents in natural language with cited, grounded answers.
+**Sales-enablement assistant for Account Executives** — ask natural-language questions
+of your team's sales playbooks (product, pricing, ICP, discovery/demo scripts,
+competitive battlecards, case studies) and get fast, cited, grounded answers.
 
-**Security-first**: envelope encryption at rest, document-level ACLs enforced at
-retrieval time, an append-only audit trail on every access, and classification-aware
-routing of confidential documents to self-hosted models.
+Two jobs: **new-rep ramp** (curated starter questions) and **live objection prep**
+(a saved objection library). Managers upload and curate content and control which
+content is rep-visible vs. manager-only; AEs consume via chat.
 
-**Auth**: register a tenant (`POST /auth/register`), then `POST /auth/login` to obtain a
-bearer token. Send it as `Authorization: Bearer <token>` on every other request.
+**Auth**: register a tenant (`POST /auth/register`) to create the manager account, then
+`POST /auth/login` for a bearer token. Send it as `Authorization: Bearer <token>`.
 """
 
 # One description per router tag (the routers already set matching `tags=[...]`).
@@ -30,26 +31,31 @@ _OPENAPI_TAGS = [
     {"name": "auth", "description": "Tenant registration, login, token refresh, current user."},
     {
         "name": "documents",
-        "description": "Upload, list, fetch, delete documents and manage their ACLs.",
+        "description": "Upload, list, fetch, delete sales content/playbooks (manager-managed).",
     },
     {
         "name": "search",
-        "description": "Hybrid (vector + BM25) re-ranked, ACL-filtered chunk search.",
+        "description": "Hybrid (vector + BM25) re-ranked, visibility-filtered content search.",
     },
     {
         "name": "query",
-        "description": "Multi-agent cited Q&A, streaming, and human-approval review.",
+        "description": "Multi-agent cited Q&A with streaming (the AE chat).",
+    },
+    {"name": "ramp", "description": "Manager-curated new-rep ramp checklist (AE-readable)."},
+    {
+        "name": "objections",
+        "description": "Manager-curated objection library for objection-lookup quick mode.",
     },
     {"name": "evals", "description": "RAGAS evaluation run history (admin, read-only)."},
     {
         "name": "admin",
-        "description": "User, group, API-key, and tenant-policy management (OWNER/ADMIN).",
+        "description": "Rep (user) management, groups, and tenant settings (manager/admin).",
     },
     {
         "name": "compliance",
-        "description": "Compliance config, retention policy, and GDPR data-subject requests.",
+        "description": "Compliance config, retention policy, GDPR DSRs (enterprise; flag-gated).",
     },
-    {"name": "audit", "description": "Audit-log query and SIEM-ready export (OWNER/ADMIN)."},
+    {"name": "audit", "description": "Audit-log query and SIEM-ready export (manager/admin)."},
 ]
 
 
@@ -57,11 +63,11 @@ def create_app() -> FastAPI:
     configure_logging()
 
     app = FastAPI(
-        title="Enterprise Document Intelligence Platform",
+        title="Sales Assistant",
         version=__version__,
         description=_DESCRIPTION,
         openapi_tags=_OPENAPI_TAGS,
-        contact={"name": "EDIP Support", "email": "support@example.com"},
+        contact={"name": "Sales Assistant Support", "email": "support@example.com"},
         license_info={"name": "Proprietary"},
         servers=[{"url": "/", "description": "This deployment"}],
     )

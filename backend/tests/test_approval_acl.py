@@ -1,4 +1,9 @@
-"""Reviewer approval scoping: a REVIEWER needs CanReview on the source documents."""
+"""Approval authorization: only managers (OWNER/ADMIN) may approve a held query.
+
+The human-approval gate is off by default in the v1 sales product, but the endpoint is
+retained; these tests cover its authorization. (The dedicated REVIEWER role + per-document
+REVIEW scoping were removed in the v1 two-role reframe.)
+"""
 
 from __future__ import annotations
 
@@ -17,18 +22,18 @@ async def _upload(client, headers, name: str, text: str) -> uuid.UUID:
     return uuid.UUID(r.json()["id"])
 
 
-async def _reviewer(db, session_factory, tenant_id: uuid.UUID) -> tuple[uuid.UUID, dict]:
+async def _member(db, session_factory, tenant_id: uuid.UUID) -> dict:
     async with session_factory() as s:
-        reviewer = User(
-            tenant_id=tenant_id, email="reviewer@acme.com",
-            hashed_password=hash_password("password-reviewerx"),
-            role=UserRole.REVIEWER, is_active=True,
+        member = User(
+            tenant_id=tenant_id, email="ae@acme.com",
+            hashed_password=hash_password("password-memberx"),
+            role=UserRole.MEMBER, is_active=True,
         )
-        s.add(reviewer)
+        s.add(member)
         await s.commit()
-        reviewer_id = reviewer.id
-    token = create_access_token(user_id=reviewer_id, tenant_id=tenant_id, role="reviewer")
-    return reviewer_id, {"Authorization": f"Bearer {token}"}
+        member_id = member.id
+    token = create_access_token(user_id=member_id, tenant_id=tenant_id, role="member")
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def _held_query(client, owner_headers) -> str:
@@ -41,42 +46,22 @@ async def _held_query(client, owner_headers) -> str:
 
 
 @pytest.mark.asyncio
-async def test_reviewer_without_canreview_is_denied(client, acme, db_session, session_factory) -> None:
+async def test_manager_can_approve_held_query(client, acme) -> None:
     await _upload(client, acme["headers"], "hr.txt", "Vacation policy grants twenty days. " * 5)
-    tenant_id = uuid.UUID(acme["tenant_id"])
     qid = await _held_query(client, acme["headers"])
-    _, headers = await _reviewer(db_session, session_factory, tenant_id)
-
-    resp = await client.post(f"/query/{qid}/approve", headers=headers)
-    assert resp.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_reviewer_with_canreview_can_approve(client, acme, db_session, session_factory) -> None:
-    doc = await _upload(client, acme["headers"], "hr.txt", "Vacation policy grants twenty days. " * 5)
-    tenant_id = uuid.UUID(acme["tenant_id"])
-    qid = await _held_query(client, acme["headers"])
-    reviewer_id, headers = await _reviewer(db_session, session_factory, tenant_id)
-
-    # Owner grants the reviewer REVIEW on the source document.
-    grant = await client.post(
-        f"/documents/{doc}/acl",
-        json={"principal_type": "user", "principal_id": str(reviewer_id), "permissions": ["review"]},
-        headers=acme["headers"],
-    )
-    assert grant.status_code == 201, grant.text
-
-    resp = await client.post(f"/query/{qid}/approve", headers=headers)
+    # The owner (a manager) approves with no per-doc grant needed.
+    resp = await client.post(f"/query/{qid}/approve", headers=acme["headers"])
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == QueryStatus.COMPLETED.value
     assert resp.json()["answer"]
 
 
 @pytest.mark.asyncio
-async def test_admin_can_approve_without_grant(client, acme) -> None:
+async def test_ae_cannot_approve(client, acme, db_session, session_factory) -> None:
     await _upload(client, acme["headers"], "hr.txt", "Vacation policy grants twenty days. " * 5)
+    tenant_id = uuid.UUID(acme["tenant_id"])
     qid = await _held_query(client, acme["headers"])
-    # The owner (privileged) approves with no per-doc grant needed.
-    resp = await client.post(f"/query/{qid}/approve", headers=acme["headers"])
-    assert resp.status_code == 200
-    assert resp.json()["status"] == QueryStatus.COMPLETED.value
+    ae_headers = await _member(db_session, session_factory, tenant_id)
+
+    resp = await client.post(f"/query/{qid}/approve", headers=ae_headers)
+    assert resp.status_code == 403

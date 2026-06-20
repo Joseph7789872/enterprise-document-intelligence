@@ -15,9 +15,13 @@ from app.models.query import QueryStatus
 from app.models.user import User, UserRole
 
 
-async def _upload(client, headers, name: str, text: str) -> uuid.UUID:
+async def _upload(client, headers, name: str, text: str, visibility: str = "manager_only") -> uuid.UUID:
+    # Default manager-only so retrieval-time ACL (the grant path) is what's under test;
+    # pass visibility="rep_visible" to exercise the AE default-visibility behavior.
     files = {"file": (name, text.encode("utf-8"), "text/plain")}
-    r = await client.post("/documents", files=files, headers=headers)
+    r = await client.post(
+        "/documents", files=files, data={"visibility": visibility}, headers=headers
+    )
     assert r.status_code == 202, r.text
     return uuid.UUID(r.json()["id"])
 
@@ -73,6 +77,40 @@ async def test_search_returns_only_permitted_documents(client, acme, db_session,
     returned_docs = {res["document_id"] for res in r.json()["results"]}
     assert str(doc_b) not in returned_docs
     assert returned_docs <= {str(doc_a)}
+
+
+@pytest.mark.asyncio
+async def test_member_retrieves_rep_visible_without_grant(client, acme, db_session, session_factory) -> None:
+    # Rep-visible content is queryable by any AE without an explicit grant.
+    await _upload(
+        client, acme["headers"], "pitch.txt",
+        "Our product pitch covers onboarding and analytics. " * 5, "rep_visible",
+    )
+    tenant_id = uuid.UUID(acme["tenant_id"])
+    _, headers = await _member(db_session, session_factory, tenant_id)
+
+    r = await client.post("/search", json={"query": "product pitch onboarding", "top_k": 6}, headers=headers)
+    assert r.status_code == 200
+    assert r.json()["results"]  # the AE can see rep-visible content
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_answers_when_human_review_disabled(
+    client, acme, db_session, session_factory, monkeypatch
+) -> None:
+    # With the human-review gate off (the v1 default), an empty/low-confidence retrieval
+    # is answered honestly rather than held for a human.
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENABLE_HUMAN_REVIEW", False, raising=False)
+    await _upload(client, acme["headers"], "secret.txt", "Manager-only floor pricing memo. " * 5)
+    tenant_id = uuid.UUID(acme["tenant_id"])
+    _, headers = await _member(db_session, session_factory, tenant_id)
+
+    r = await client.post("/query", json={"question": "floor pricing?"}, headers=headers)
+    assert r.status_code == 200
+    assert r.json()["status"] == QueryStatus.COMPLETED.value
+    assert r.json()["answer"] is not None
 
 
 @pytest.mark.asyncio

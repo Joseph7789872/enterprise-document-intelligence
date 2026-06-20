@@ -122,9 +122,23 @@ class Settings(BaseSettings):
     SYNTHESIZER_MODEL: str = "claude-opus-4-8"
     SYNTHESIS_MAX_TOKENS: int = 4096
     # Below this verifier confidence (or on a confidentiality flag), answers route to
-    # human review instead of being delivered autonomously.
+    # human review instead of being delivered autonomously — only when ENABLE_HUMAN_REVIEW
+    # is on (see the v1 feature flags below).
     CONFIDENCE_THRESHOLD: float = 0.6
     MAX_SUBQUERIES: int = 4
+
+    # ── V1 product feature flags (sales-enablement) ───────────────────────────────────
+    # Enterprise-only surfaces are kept in the codebase but switched off in the v1 SaaS
+    # product. These default ON so the dev environment and the full test suite still
+    # exercise them; the production v1 deployment sets them OFF (via env) to hide the
+    # enterprise/compliance surface. (The MCP server lives in services/mcp_tools.py and is
+    # not mounted on the REST app, so it needs no router flag.)
+    ENABLE_COMPLIANCE: bool = True  # /compliance (GDPR/DSR) router + SIEM audit export
+    ENABLE_EVALS: bool = True  # /evals run-history router
+    # Low-confidence / confidentiality human-approval gate. When OFF, low-confidence
+    # answers are still delivered (with their confidence surfaced) rather than held —
+    # an honest "here's what I found, I'm not fully sure" instead of a human gate.
+    ENABLE_HUMAN_REVIEW: bool = True
 
     # ── Self-hosted LLM + deployment modes (Phase 7) ──────────────────────────────────
     # The self-hosted "profile" used by the model router for sensitive documents (and as

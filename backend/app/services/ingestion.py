@@ -72,7 +72,7 @@ async def _run_pipeline(session, document: Document) -> None:  # type: ignore[no
     plaintext = decrypt(_blob_from_stored(encrypted))
 
     # 2. Extract text.
-    extracted = extraction.extract_text(plaintext, document.content_type, document.filename)
+    extracted = extraction.extract_text(plaintext, document.mime_type, document.filename)
     document.page_count = extracted.page_count
 
     # 3. Chunk.

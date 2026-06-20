@@ -24,8 +24,7 @@ from app.models.query import Query, QueryStatus
 from app.models.user import UserRole
 from app.observability.tracing import start_trace
 from app.schemas.query import AnswerResponse, CitationOut, QueryRead, QueryRequest
-from app.services import audit_service, authz
-from app.services.authz import Permission
+from app.services import audit_service
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -225,7 +224,11 @@ async def ask_stream(
                 await db.commit()
                 yield _sse(
                     "done",
-                    {"query_id": str(query.id), "citations": _citations_json(state)},
+                    {
+                        "query_id": str(query.id),
+                        "citations": _citations_json(state),
+                        "confidence": _confidence(state),
+                    },
                 )
         except LLMRoutingError as exc:
             # Fail-closed: a sensitive route needed a self-hosted model that isn't
@@ -301,18 +304,14 @@ async def _load_pending(db: AsyncSession, current: CurrentUser, query_id: uuid.U
 async def approve_query(
     query_id: uuid.UUID,
     request: Request,
-    current: CurrentUser = Depends(
-        require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.REVIEWER)
-    ),
+    current: CurrentUser = Depends(require_role(UserRole.OWNER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> AnswerResponse:
-    """Reviewer approves a held query: synthesize an answer and complete it.
+    """A manager approves a held query: synthesize the deferred answer and complete it.
 
-    A held query has no citations yet (synthesis was deferred), so reviewer scoping is
-    enforced against the *retrieved source documents*: a non-privileged REVIEWER may
-    approve only if they hold ``REVIEW`` on every document feeding the answer. Retrieval
-    runs unrestricted here (to reconstruct the true source set the asker would see),
-    then the per-document REVIEW gate is applied before synthesis.
+    (The human-approval gate is off by default in the v1 sales product; this endpoint
+    backs it when re-enabled. Only managers/admins may approve.) Retrieval runs
+    unrestricted to reconstruct the true source set the asker would see.
     """
     query = await _load_pending(db, current, query_id)
     question = decrypt_str(query.question_encrypted)
@@ -321,7 +320,7 @@ async def approve_query(
         db,
         tenant_id=current.tenant_id,
         user_id=current.id,
-        role=UserRole.OWNER,  # unrestricted retrieval; REVIEW gate applied below
+        role=UserRole.OWNER,  # unrestricted retrieval (manager override)
         trace_id=get_trace_id(),
     )
     state: AgentState = {
@@ -334,21 +333,7 @@ async def approve_query(
         with start_trace("query.approve", tenant_id=current.tenant_id, user_id=current.id):
             state.update(await runner.planner(state))
             state.update(await runner.retriever(state))
-
-            # Per-document REVIEW gate for non-privileged reviewers.
-            if not authz.is_privileged(current.role):
-                for document_id in {c.document_id for c in state.get("chunks", [])}:
-                    await authz.assert_can(
-                        db,
-                        tenant_id=current.tenant_id,
-                        user_id=current.id,
-                        role=current.role,
-                        document_id=document_id,
-                        permission=Permission.REVIEW,
-                        ip_address=client_ip(request),
-                    )
-
-            state.update(await runner.synthesizer(state))  # human override — bypass the gate
+            state.update(await runner.synthesizer(state))
             state.update(await runner.source_attributor(state))
     except LLMRoutingError as exc:
         await _audit_route_denied(current, exc, ip=client_ip(request))
@@ -381,9 +366,7 @@ async def approve_query(
 async def reject_query(
     query_id: uuid.UUID,
     request: Request,
-    current: CurrentUser = Depends(
-        require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.REVIEWER)
-    ),
+    current: CurrentUser = Depends(require_role(UserRole.OWNER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> QueryRead:
     query = await _load_pending(db, current, query_id)

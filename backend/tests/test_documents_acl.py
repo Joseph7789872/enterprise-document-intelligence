@@ -12,8 +12,12 @@ from tests.conftest import register_tenant
 
 
 async def _upload(client, headers, name: str, text: str) -> uuid.UUID:
+    # Manager-only so VIEW comes only from an explicit grant (the behavior under test);
+    # rep-visible content would otherwise be visible to every AE by default.
     files = {"file": (name, text.encode("utf-8"), "text/plain")}
-    r = await client.post("/documents", files=files, headers=headers)
+    r = await client.post(
+        "/documents", files=files, data={"visibility": "manager_only"}, headers=headers
+    )
     assert r.status_code == 202, r.text
     return uuid.UUID(r.json()["id"])
 

@@ -110,3 +110,77 @@ button:disabled {
   background: var(--border);
   color: var(--text);
 }
+
+/* Mode tabs (Ask / Objection lookup) */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* One-click objection / ramp prompt chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+/* Confidence / held-answer banner */
+.banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin: 0 0 12px;
+}
+
+.banner.warn {
+  background: rgba(255, 184, 77, 0.12);
+  border: 1px solid rgba(255, 184, 77, 0.4);
+  color: #ffce8a;
+}
+
+.streaming-cursor::after {
+  content: "▍";
+  animation: blink 1s steps(2, start) infinite;
+  color: var(--accent);
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}

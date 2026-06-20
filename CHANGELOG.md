@@ -6,6 +6,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### V1 repurpose — Sales-Enablement Assistant for AEs
+
+Re-framed the enterprise RAG platform into a focused sales-enablement assistant for
+Account Executives. The retrieval + multi-agent (cited, streaming) engine, multi-tenancy,
+JWT auth, ingestion, and audit logging are reused as-is.
+
+#### Changed
+- **Roles** reduced to two effective roles: manager (OWNER/ADMIN) and AE (MEMBER).
+  Uploads/curation are manager-only; AEs consume via chat.
+- **Content metadata** replaces the legal taxonomy: `documents.content_type`
+  (product / pricing / objections / battlecard / case_study / script) + `visibility`
+  (rep_visible / manager_only); the former MIME `content_type` column is now `mime_type`.
+  Dropped `classification_level`, `department`, `matter_id` (migration `0009`).
+- **Visibility-based access**: AEs may VIEW/QUERY all rep-visible content without an
+  explicit grant; manager-only content stays grant/role-gated (enforced at retrieval time).
+- **Honest low-confidence answers**: with the human-review gate off (v1 default), a
+  low-confidence answer is delivered with its confidence surfaced instead of being held.
+- **Terminology/branding** reskinned to "Sales Assistant" (API title/description, UI).
+
+#### Added
+- **Manager-curated content**: `ramp_topics` + `saved_objections` tables (migration `0010`),
+  with `GET /ramp/topics` and `GET /objections` (AE-readable) plus manager CRUD.
+- **Frontend**: AE chat with streaming cited answers, an objection-lookup quick mode, and a
+  low-confidence banner; a `/ramp` onboarding checklist (deep-links into the chat); a
+  manager `/admin` area for content upload (type + visibility), rep invites, and ramp/
+  objection curation.
+- Streaming `/query/stream` `done` event now carries `confidence`.
+
+#### Feature-flagged off for v1 (kept in the codebase, default on in dev/test)
+- `ENABLE_COMPLIANCE` (GDPR/DSR + SIEM audit export), `ENABLE_EVALS` (evals run history),
+  and `ENABLE_HUMAN_REVIEW` (the human-approval gate). The MCP server remains unmounted.
+- Classification-based self-hosted LLM routing is retired from the product; deployment-mode
+  and per-tenant self-hosted policy routing remain.
+
 ## [0.1.0] — 2026-06-12
 
 First end-to-end release: a secure, multi-deployment RAG platform built across eight

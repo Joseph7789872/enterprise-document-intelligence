@@ -15,8 +15,12 @@ from sqlalchemy import select
 
 
 async def _upload(client, headers, name: str, text: str) -> uuid.UUID:
+    # Manager-only so MCP ACL enforcement is exercised via explicit grants (rep-visible
+    # content would otherwise be visible to every member by default).
     files = {"file": (name, text.encode("utf-8"), "text/plain")}
-    r = await client.post("/documents", files=files, headers=headers)
+    r = await client.post(
+        "/documents", files=files, data={"visibility": "manager_only"}, headers=headers
+    )
     assert r.status_code == 202, r.text
     return uuid.UUID(r.json()["id"])
 

@@ -1,8 +1,9 @@
-"""Document model — an uploaded file and its ingestion lifecycle.
+"""Content model — an uploaded sales playbook/asset and its ingestion lifecycle.
 
-The raw bytes live (envelope-encrypted) in object storage at ``storage_key``; this
-row holds only metadata + status. ``classification_level`` drives downstream handling
-(e.g. routing privileged docs away from third-party embeddings in a later phase).
+The raw bytes live (envelope-encrypted) in object storage at ``storage_key``; this row
+holds only metadata + status. ``content_type`` categorises the sales material and
+``visibility`` controls whether reps (AEs) can see it or it is manager-only (e.g. floor
+pricing / discounting guidance).
 """
 
 from __future__ import annotations
@@ -22,11 +23,32 @@ if TYPE_CHECKING:
     from app.models.document_chunk import DocumentChunk
 
 
+class SalesContentType(str, enum.Enum):
+    """The kind of sales material a piece of content holds."""
+
+    PRODUCT = "product"
+    PRICING = "pricing"
+    OBJECTIONS = "objections"
+    BATTLECARD = "battlecard"
+    CASE_STUDY = "case_study"
+    SCRIPT = "script"  # discovery / demo scripts
+
+
+class ContentVisibility(str, enum.Enum):
+    """Who may see a piece of content. ``manager_only`` content is hidden from AEs and
+    enforced at retrieval time (e.g. discounting / floor pricing)."""
+
+    REP_VISIBLE = "rep_visible"
+    MANAGER_ONLY = "manager_only"
+
+
+# Retained for the model router's (currently un-wired) self-hosted routing capability and
+# its unit tests; no document column references it in the v1 sales product.
 class ClassificationLevel(str, enum.Enum):
     PUBLIC = "public"
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
-    PRIVILEGED = "privileged"  # e.g. attorney-client privileged material
+    PRIVILEGED = "privileged"
 
 
 class IngestionStatus(str, enum.Enum):
@@ -48,7 +70,9 @@ class Document(Base, TimestampMixin, SoftDeleteMixin, TenantMixin):
     )
 
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
-    content_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    # MIME type of the uploaded bytes (e.g. "application/pdf"). Renamed from the former
+    # ``content_type`` to free that name for the sales content category below.
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     # SHA-256 of the *plaintext* bytes, for integrity checks and dedup.
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -57,16 +81,16 @@ class Document(Base, TimestampMixin, SoftDeleteMixin, TenantMixin):
     storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     encryption_key_version: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    classification_level: Mapped[ClassificationLevel] = mapped_column(
-        Enum(ClassificationLevel, name="classification_level", native_enum=False, length=20),
+    # Sales content category + rep/manager visibility (replaces the legal taxonomy).
+    content_type: Mapped[SalesContentType] = mapped_column(
+        Enum(SalesContentType, name="sales_content_type", native_enum=False, length=20),
         nullable=False,
-        default=ClassificationLevel.INTERNAL,
+        default=SalesContentType.PRODUCT,
     )
-    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Optional matter/client filing (FK groups). SET NULL so deleting a matter group
-    # un-files its documents rather than deleting them.
-    matter_id: Mapped[uuid.UUID | None] = mapped_column(
-        GUID(), ForeignKey("groups.id", ondelete="SET NULL"), nullable=True, index=True
+    visibility: Mapped[ContentVisibility] = mapped_column(
+        Enum(ContentVisibility, name="content_visibility", native_enum=False, length=20),
+        nullable=False,
+        default=ContentVisibility.REP_VISIBLE,
     )
 
     status: Mapped[IngestionStatus] = mapped_column(

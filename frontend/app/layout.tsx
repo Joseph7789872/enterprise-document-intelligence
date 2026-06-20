@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Enterprise Document Intelligence Platform",
-  description: "Securely query your private company documents in natural language.",
+  title: "Sales Assistant",
+  description:
+    "Cited, grounded answers from your sales playbooks — ramp new reps fast and prep for objections.",
 };
 
 export default function RootLayout({
