@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type Citation,
   type SavedObjection,
@@ -23,6 +23,10 @@ type Mode = "ask" | "objection";
 export default function ChatPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  // Guards the /app?q=… deep-link so it auto-runs exactly once per mount —
+  // React StrictMode invokes mount effects twice in dev, which otherwise fires
+  // two /query/stream calls and concatenates duplicate answer text.
+  const autoRan = useRef(false);
 
   const [mode, setMode] = useState<Mode>("ask");
   const [objections, setObjections] = useState<SavedObjection[]>([]);
@@ -56,7 +60,8 @@ export default function ChatPage() {
     // Deep-link from the ramp checklist: /app?q=<question> prefills and runs it.
     // Read from window.location to avoid the useSearchParams Suspense requirement.
     const q = new URLSearchParams(window.location.search).get("q");
-    if (q) {
+    if (q && !autoRan.current) {
+      autoRan.current = true;
       setQuestion(q);
       void run(q);
     }

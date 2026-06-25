@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -17,7 +18,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -28,6 +29,7 @@ from app.errors import AppError, NotFoundError
 from app.models.audit_log import AuditAction
 from app.models.document import ContentVisibility, Document, IngestionStatus, SalesContentType
 from app.models.document_access_control import DocumentAccessControl, PrincipalType
+from app.models.document_chunk import DocumentChunk
 from app.models.group import Group
 from app.models.user import User, UserRole
 from app.schemas.acl import ACLGrantCreate, ACLGrantRead
@@ -35,7 +37,9 @@ from app.schemas.document import DocumentRead, UploadResponse
 from app.services import audit_service, authz
 from app.services.authz import Permission
 from app.services.ingestion import process_document
-from app.storage import document_storage_key, get_storage
+from app.storage import StorageError, document_storage_key, get_storage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -258,6 +262,24 @@ async def delete_document(
     )
 
     document.deleted_at = datetime.now(UTC)
+
+    # Purge retrieval artifacts so deleted content can never resurface in answers.
+    # The document row is retained (soft-deleted) for the audit trail, but its
+    # chunks/embeddings and the encrypted source blob are removed: managers
+    # retrieve with an unrestricted document filter (accessible_document_ids -> None),
+    # so leaving chunks behind would let deleted content keep being cited.
+    await db.execute(
+        delete(DocumentChunk).where(
+            DocumentChunk.tenant_id == current.tenant_id,
+            DocumentChunk.document_id == document.id,
+        )
+    )
+    document.chunk_count = 0
+    try:
+        get_storage().delete(document.storage_key)
+    except StorageError:  # best-effort: chunk purge already removed retrievable text
+        logger.warning("Failed to delete storage blob for document %s", document.id)
+
     await db.flush()
     await audit_service.write_event(
         db,

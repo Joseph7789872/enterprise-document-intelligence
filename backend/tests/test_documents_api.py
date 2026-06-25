@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 from app.models.audit_log import AuditAction, AuditLog
 from app.models.document import IngestionStatus
-from sqlalchemy import select
+from app.models.document_chunk import DocumentChunk
+from sqlalchemy import func, select
 
 from tests.conftest import register_tenant
 
@@ -81,6 +82,36 @@ async def test_documents_are_tenant_isolated(client, acme, db_session) -> None:
     listing = await client.get("/documents", headers=other["headers"])
     assert listing.status_code == 200
     assert listing.json() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_purges_chunks_so_content_is_not_retrievable(
+    client, acme, db_session
+) -> None:
+    """Regression: soft-deleting a document must purge its chunks/embeddings.
+
+    Managers retrieve with an unrestricted document filter, so leaving chunks
+    behind let deleted content keep being cited in answers (BUG-1).
+    """
+    up = await client.post("/documents", files=_txt_upload(), headers=acme["headers"])
+    doc_id = up.json()["id"]
+
+    async def chunk_count() -> int:
+        return await db_session.scalar(
+            select(func.count())
+            .select_from(DocumentChunk)
+            .where(DocumentChunk.document_id == doc_id)
+        )
+
+    assert await chunk_count() > 0, "document should have chunks after ingestion"
+
+    deleted = await client.delete(f"/documents/{doc_id}", headers=acme["headers"])
+    assert deleted.status_code == 204, deleted.text
+
+    # Document is soft-deleted (404) and its chunks/embeddings are gone.
+    got = await client.get(f"/documents/{doc_id}", headers=acme["headers"])
+    assert got.status_code == 404
+    assert await chunk_count() == 0, "chunks must be purged on delete"
 
 
 @pytest.mark.asyncio
