@@ -72,6 +72,13 @@ class AuditAction(str, enum.Enum):
     # Self-hosted LLM routing + deployment (Phase 7)
     TENANT_SETTINGS_UPDATED = "tenant.settings_updated"
     LLM_ROUTE_DENIED = "llm.route_denied"
+    # Manager-curated sales content (V1)
+    RAMP_TOPIC_CREATED = "ramp_topic.created"
+    RAMP_TOPIC_UPDATED = "ramp_topic.updated"
+    RAMP_TOPIC_DELETED = "ramp_topic.deleted"
+    OBJECTION_CREATED = "objection.created"
+    OBJECTION_UPDATED = "objection.updated"
+    OBJECTION_DELETED = "objection.deleted"
 
 
 class AuditLog(Base):

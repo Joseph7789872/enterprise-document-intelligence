@@ -18,12 +18,15 @@ if TYPE_CHECKING:
 
 
 class UserRole(str, enum.Enum):
-    """Coarse roles for Phase 0. Fine-grained document ACLs arrive in Phase 5."""
+    """The two effective v1 roles: manager (OWNER/ADMIN) and AE (MEMBER).
+
+    OWNER is the tenant's founding manager (created at registration); ADMIN is an
+    additional manager; MEMBER is an Account Executive.
+    """
 
     OWNER = "owner"
     ADMIN = "admin"
     MEMBER = "member"
-    REVIEWER = "reviewer"
 
 
 class User(Base, TimestampMixin, SoftDeleteMixin, TenantMixin):

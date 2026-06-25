@@ -15,9 +15,13 @@ from app.services.authz import Permission
 from sqlalchemy import select
 
 
-async def _upload(client, headers, name: str, text: str) -> uuid.UUID:
+async def _upload(client, headers, name: str, text: str, visibility: str = "manager_only") -> uuid.UUID:
+    # Default to manager-only so a member has no access without an explicit grant
+    # (the grant path under test); pass visibility="rep_visible" to test the AE default.
     files = {"file": (name, text.encode("utf-8"), "text/plain")}
-    r = await client.post("/documents", files=files, headers=headers)
+    r = await client.post(
+        "/documents", files=files, data={"visibility": visibility}, headers=headers
+    )
     assert r.status_code == 202, r.text
     return uuid.UUID(r.json()["id"])
 
@@ -113,6 +117,33 @@ async def test_group_grant_propagates_and_revokes(client, acme, db_session) -> N
     assert not await authz.can_access_document(
         db_session, tenant_id=tenant_id, user_id=member_id, role=UserRole.MEMBER,
         document_id=doc, permission=Permission.QUERY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_rep_visible_content_is_queryable_without_a_grant(client, acme, db_session) -> None:
+    """An AE (MEMBER) sees all rep-visible content without an explicit grant, but
+    manager-only content stays hidden, and visibility never confers DELETE."""
+    tenant_id = uuid.UUID(acme["tenant_id"])
+    rep_doc = await _upload(client, acme["headers"], "pitch.txt", "Product pitch. " * 4, "rep_visible")
+    mgr_doc = await _upload(client, acme["headers"], "floor.txt", "Floor pricing. " * 4, "manager_only")
+    member_id = await _make_member(db_session, tenant_id)
+
+    allowed_query = await authz.accessible_document_ids(
+        db_session, tenant_id=tenant_id, user_id=member_id,
+        role=UserRole.MEMBER, permission=Permission.QUERY,
+    )
+    assert rep_doc in allowed_query
+    assert mgr_doc not in allowed_query
+
+    # Visibility grants VIEW/QUERY but never DELETE.
+    assert await authz.can_access_document(
+        db_session, tenant_id=tenant_id, user_id=member_id, role=UserRole.MEMBER,
+        document_id=rep_doc, permission=Permission.VIEW,
+    )
+    assert not await authz.can_access_document(
+        db_session, tenant_id=tenant_id, user_id=member_id, role=UserRole.MEMBER,
+        document_id=rep_doc, permission=Permission.DELETE,
     )
 
 

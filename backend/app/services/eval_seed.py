@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.crypto import encrypt
 from app.core.security import hash_password
-from app.models.document import ClassificationLevel, Document, IngestionStatus
+from app.models.document import Document, IngestionStatus
 from app.models.tenant import Tenant
 from app.models.user import User, UserRole
 from app.services.ingestion import process_document
@@ -109,12 +109,11 @@ async def seed_corpus(
                 tenant_id=tenant_id,
                 owner_user_id=owner_user_id,
                 filename=path.name,
-                content_type="text/plain",
+                mime_type="text/plain",
                 size_bytes=len(data),
                 sha256=hashlib.sha256(data).hexdigest(),
                 storage_key=storage_key,
                 encryption_key_version=settings.ENCRYPTION_KEY_VERSION,
-                classification_level=ClassificationLevel.INTERNAL,
                 status=IngestionStatus.PENDING,
                 chunk_count=0,
             )

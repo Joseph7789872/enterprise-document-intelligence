@@ -29,12 +29,12 @@ async def _member_headers(db, session_factory, tenant_id: uuid.UUID) -> dict:
 async def test_admin_creates_and_updates_user(client, acme) -> None:
     created = await client.post(
         "/admin/users",
-        json={"email": "analyst@acme.com", "password": "a-strong-password-123", "role": "reviewer"},
+        json={"email": "analyst@acme.com", "password": "a-strong-password-123", "role": "admin"},
         headers=acme["headers"],
     )
     assert created.status_code == 201, created.text
     user_id = created.json()["id"]
-    assert created.json()["role"] == "reviewer"
+    assert created.json()["role"] == "admin"
 
     updated = await client.patch(
         f"/admin/users/{user_id}", json={"is_active": False}, headers=acme["headers"]

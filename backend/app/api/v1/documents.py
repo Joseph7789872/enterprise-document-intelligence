@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -17,7 +18,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -26,8 +27,9 @@ from app.core.deps import CurrentUser, client_ip, get_current_user, get_db, requ
 from app.core.logging import get_trace_id
 from app.errors import AppError, NotFoundError
 from app.models.audit_log import AuditAction
-from app.models.document import ClassificationLevel, Document, IngestionStatus
+from app.models.document import ContentVisibility, Document, IngestionStatus, SalesContentType
 from app.models.document_access_control import DocumentAccessControl, PrincipalType
+from app.models.document_chunk import DocumentChunk
 from app.models.group import Group
 from app.models.user import User, UserRole
 from app.schemas.acl import ACLGrantCreate, ACLGrantRead
@@ -35,7 +37,9 @@ from app.schemas.document import DocumentRead, UploadResponse
 from app.services import audit_service, authz
 from app.services.authz import Permission
 from app.services.ingestion import process_document
-from app.storage import document_storage_key, get_storage
+from app.storage import StorageError, document_storage_key, get_storage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -64,14 +68,12 @@ async def upload_document(
     request: Request,
     background: BackgroundTasks,
     file: UploadFile = File(...),
-    classification_level: ClassificationLevel = Form(ClassificationLevel.INTERNAL),
-    department: str | None = Form(None),
-    current: CurrentUser = Depends(
-        require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.MEMBER)
-    ),
+    content_type: SalesContentType = Form(SalesContentType.PRODUCT),
+    visibility: ContentVisibility = Form(ContentVisibility.REP_VISIBLE),
+    current: CurrentUser = Depends(require_role(UserRole.OWNER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> UploadResponse:
-    """Accept a document, store it encrypted, and queue background ingestion."""
+    """Accept a piece of content (manager-only), store it encrypted, and queue ingestion."""
     filename = file.filename or "upload"
     ext = _extension(filename)
     if ext not in settings.allowed_upload_extensions:
@@ -118,13 +120,13 @@ async def upload_document(
         tenant_id=current.tenant_id,
         owner_user_id=current.id,
         filename=filename,
-        content_type=file.content_type or "application/octet-stream",
+        mime_type=file.content_type or "application/octet-stream",
         size_bytes=len(data),
         sha256=sha256,
         storage_key=storage_key,
         encryption_key_version=settings.ENCRYPTION_KEY_VERSION,
-        classification_level=classification_level,
-        department=department,
+        content_type=content_type,
+        visibility=visibility,
         status=IngestionStatus.PENDING,
         chunk_count=0,
     )
@@ -141,7 +143,8 @@ async def upload_document(
         metadata={
             "filename": filename,
             "size_bytes": len(data),
-            "classification_level": classification_level.value,
+            "content_type": content_type.value,
+            "visibility": visibility.value,
         },
         ip_address=client_ip(request),
     )
@@ -259,6 +262,24 @@ async def delete_document(
     )
 
     document.deleted_at = datetime.now(UTC)
+
+    # Purge retrieval artifacts so deleted content can never resurface in answers.
+    # The document row is retained (soft-deleted) for the audit trail, but its
+    # chunks/embeddings and the encrypted source blob are removed: managers
+    # retrieve with an unrestricted document filter (accessible_document_ids -> None),
+    # so leaving chunks behind would let deleted content keep being cited.
+    await db.execute(
+        delete(DocumentChunk).where(
+            DocumentChunk.tenant_id == current.tenant_id,
+            DocumentChunk.document_id == document.id,
+        )
+    )
+    document.chunk_count = 0
+    try:
+        get_storage().delete(document.storage_key)
+    except StorageError:  # best-effort: chunk purge already removed retrievable text
+        logger.warning("Failed to delete storage blob for document %s", document.id)
+
     await db.flush()
     await audit_service.write_event(
         db,

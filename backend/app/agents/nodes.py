@@ -31,7 +31,7 @@ from app.agents.state import (
 from app.core.config import settings
 from app.core.crypto import decrypt_str
 from app.models.audit_log import AuditAction
-from app.models.document import ClassificationLevel, Document
+from app.models.document import Document
 from app.models.tenant import Tenant
 from app.models.user import UserRole
 from app.observability.tracing import record_generation, trace_span
@@ -48,14 +48,6 @@ from app.services.model_router import (
     get_model_router,
 )
 from app.services.reranker import Reranker, get_reranker
-
-# Classification ordering for picking the most-sensitive retrieved document.
-_CLASS_RANK: dict[ClassificationLevel, int] = {
-    ClassificationLevel.PUBLIC: 0,
-    ClassificationLevel.INTERNAL: 1,
-    ClassificationLevel.CONFIDENTIAL: 2,
-    ClassificationLevel.PRIVILEGED: 3,
-}
 
 _MARKER_RE = re.compile(r"\[(\d+)\]")
 
@@ -102,13 +94,12 @@ class WorkflowRunner:
         return self._tenant_settings
 
     async def _route(self, node: Node, state: AgentState) -> Route:
-        """Resolve the client/model for a post-retrieval node from the most-sensitive
-        retrieved document + this tenant's policy + the deployment mode. Raises
-        ``LLMRoutingError`` (fail-closed) when a self-hosted route is required but not
-        configured — callers must let it propagate (not swallow it)."""
+        """Resolve the client/model for a node from this tenant's policy + the deployment
+        mode (air-gapped/private-cloud or a tenant self-hosted policy force self-hosted).
+        Raises ``LLMRoutingError`` (fail-closed) when a self-hosted route is required but
+        not configured — callers must let it propagate (not swallow it)."""
         return self.router.resolve(
             node,
-            classification=state.get("max_classification"),
             tenant_settings=await self._resolve_tenant_settings(),
             deployment_mode=self.deployment_mode,
         )
@@ -188,19 +179,12 @@ class WorkflowRunner:
             scored = scored[: settings.FINAL_TOP_K]
 
             filename_cache: dict[uuid.UUID, str] = {}
-            # Track the most-sensitive retrieved document for Phase 7 model routing.
-            max_class: ClassificationLevel | None = None
             chunks: list[RetrievedChunk] = []
             for sc in scored:
                 ch = sc.chunk
                 if ch.document_id not in filename_cache:
                     doc = await self.db.get(Document, ch.document_id)
                     filename_cache[ch.document_id] = doc.filename if doc else ""
-                    if doc is not None and (
-                        max_class is None
-                        or _CLASS_RANK[doc.classification_level] > _CLASS_RANK[max_class]
-                    ):
-                        max_class = doc.classification_level
                 chunks.append(
                     RetrievedChunk(
                         chunk_id=ch.id,
@@ -211,7 +195,7 @@ class WorkflowRunner:
                         filename=filename_cache[ch.document_id],
                     )
                 )
-            return {"chunks": chunks, "max_classification": max_class}
+            return {"chunks": chunks}
 
     async def verifier(self, state: AgentState) -> AgentState:
         with trace_span("verifier"):
@@ -315,7 +299,14 @@ def build_citations(answer: str, chunks: list[RetrievedChunk]) -> list[Citation]
 
 
 def route_after_verify(state: AgentState) -> str:
-    """Conditional edge: low confidence or a confidentiality flag → human review."""
+    """Conditional edge: low confidence or a confidentiality flag → human review.
+
+    When the human-review gate is disabled (the v1 sales default), we always synthesize:
+    a low-confidence answer is still delivered (with its confidence surfaced) as an honest
+    "here's what I found, I'm not fully sure" rather than being held for a human.
+    """
+    if not settings.ENABLE_HUMAN_REVIEW:
+        return "synthesizer"
     ver = state.get("verification")
     if ver is None:
         return "human_review"

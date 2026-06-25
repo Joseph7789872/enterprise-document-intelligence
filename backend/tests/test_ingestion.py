@@ -30,7 +30,7 @@ async def _seed_document(session_factory, tenant_id, owner_id, data: bytes, file
                 tenant_id=tenant_id,
                 owner_user_id=owner_id,
                 filename=filename,
-                content_type=ct,
+                mime_type=ct,
                 size_bytes=len(data),
                 sha256=hashlib.sha256(data).hexdigest(),
                 storage_key=key,

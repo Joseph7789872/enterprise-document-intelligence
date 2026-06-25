@@ -16,8 +16,6 @@ from typing import TypedDict
 
 from pydantic import BaseModel, Field
 
-from app.models.document import ClassificationLevel
-
 QueryStatus = str  # one of QueryState values below (kept loose for the TypedDict)
 
 
@@ -77,8 +75,6 @@ class AgentState(TypedDict, total=False):
     # Produced by nodes.
     subqueries: list[str]
     chunks: list[RetrievedChunk]
-    # Highest classification among retrieved documents — drives Phase 7 model routing.
-    max_classification: ClassificationLevel | None
     verification: Verification
     requires_approval: bool
     answer: str

@@ -1,28 +1,41 @@
-# Enterprise Document Intelligence Platform (EDIP)
+# Sales Assistant
 
-Securely query your private company documents in natural language and get **cited,
-grounded answers** — built security-first for law firms, financial services, and other
-teams handling confidential and privileged material.
+A **sales-enablement assistant for Account Executives** at small SaaS teams. Ask
+natural-language questions of your company's sales knowledge — product, pricing/packaging,
+ICP/personas, discovery & demo scripts, competitive positioning, objection-handling guides,
+battlecards, and case studies — and get fast, **cited, grounded answers**.
 
-> Status: **Phases 0–8 implemented** (v0.1.0, pre-1.0). 175 backend tests passing,
-> ruff/mypy clean. See [CHANGELOG.md](CHANGELOG.md).
+> Status: **v1 in progress** — repurposed from the secure RAG platform below. Backend
+> tests green (ruff/mypy clean); see [CHANGELOG.md](CHANGELOG.md).
 
-## Why it's different
+## Two jobs it does
 
-- **Encryption everywhere** — envelope encryption (AES-256-GCM) of document bytes *and*
-  chunk text at rest; TLS in transit.
-- **Document-level access control** — deny-by-default ACLs enforced at *retrieval time*,
-  so users only ever see chunks they're permitted to read; groups for departments /
-  matters / clients.
-- **Grounded, cited answers** — a LangGraph multi-agent workflow (plan → retrieve →
-  verify → synthesize → attribute) with **human approval** for low-confidence answers.
-- **Full audit trail** — append-only, immutable audit log on every document access and
-  query; SIEM-ready export; GDPR data-subject requests.
-- **Deploy anywhere** — SaaS, single-tenant, private cloud, or fully **air-gapped** with
-  self-hosted models. Confidential documents can be routed to self-hosted LLMs while
-  ordinary documents use the cloud — and routing **fails closed**.
-- **Quality gated** — a RAGAS evaluation gate (faithfulness / context precision / answer
-  relevancy) blocks deploys that regress answer quality.
+- **New-rep ramp** — a manager-curated starter checklist turns into cited answers so new
+  AEs get productive fast.
+- **Live objection prep** — a one-click saved-objection library answers "how do I handle
+  *<objection>*?" from your battlecards and case studies, with sources and confidence.
+
+Two roles: **managers** (upload & curate content, invite reps, set rep-visible vs.
+manager-only visibility) and **AEs** (consume via chat).
+
+## Built on a security-first RAG foundation
+
+The product is a focused re-frame of an enterprise RAG platform; it reuses that engine
+as-is:
+
+- **Cited, streaming answers** — a LangGraph multi-agent workflow (plan → retrieve →
+  verify → synthesize → attribute). Low-confidence answers are returned honestly ("not
+  fully sure — here's what I found") rather than gated.
+- **Visibility-aware retrieval** — rep-visible content is queryable by every AE;
+  manager-only content (e.g. floor pricing) is enforced at *retrieval time*.
+- **Multi-tenant + encrypted** — per-tenant isolation, envelope encryption (AES-256-GCM)
+  of bytes and chunk text at rest, JWT auth, append-only audit log.
+- **Hybrid retrieval** — vector + BM25 + cross-encoder re-ranking.
+
+Enterprise-only surfaces from the original platform (GDPR/DSR compliance endpoints, the
+evals run-history API, the human-approval gate, classification-based self-hosted routing,
+the MCP server) are **kept in the codebase but switched off by feature flag** for v1
+(`ENABLE_COMPLIANCE`, `ENABLE_EVALS`, `ENABLE_HUMAN_REVIEW` — see `backend/.env.example`).
 
 ## Architecture
 

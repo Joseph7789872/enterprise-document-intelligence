@@ -39,7 +39,9 @@ from app.models import (  # noqa: E402,F401
     group,
     group_membership,
     query,
+    ramp_topic,
     retention,
+    saved_objection,
     tenant,
     user,
 )

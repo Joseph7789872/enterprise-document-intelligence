@@ -37,6 +37,10 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 *.db
+*.db.bak-*
+
+# QA / Playwright MCP artifacts (throwaway test evidence)
+.playwright-mcp/
 
 # Runtime logs + local storage (encrypted blobs / uploaded data)
 *.log
@@ -48,3 +52,4 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+.gstack/

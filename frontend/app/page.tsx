@@ -3,21 +3,29 @@ import Link from "next/link";
 export default function LandingPage() {
   return (
     <main>
-      <span className="badge">Enterprise · Security-first</span>
-      <h1 style={{ marginTop: 16 }}>Document Intelligence Platform</h1>
+      <span className="badge">For Account Executives</span>
+      <h1 style={{ marginTop: 16 }}>Sales Assistant</h1>
       <p className="muted">
-        Ask questions of your private company documents and get cited, grounded answers —
-        with encryption at rest, document-level access control, a full audit trail, and the
-        option to keep everything on self-hosted models for confidential material.
+        Ask natural-language questions of your team&apos;s sales playbooks — product,
+        pricing, ICP, discovery scripts, competitive battlecards, and case studies — and
+        get fast, cited, grounded answers. Built for AEs at small SaaS teams.
       </p>
 
       <div className="card">
-        <h2 style={{ marginTop: 0 }}>Why teams choose it</h2>
+        <h2 style={{ marginTop: 0 }}>Two jobs it does well</h2>
         <ul className="muted">
-          <li>Envelope encryption (AES-256-GCM) and retrieval-time ACL enforcement</li>
-          <li>Multi-agent workflow with human approval for low-confidence answers</li>
-          <li>Append-only audit log on every document access and query</li>
-          <li>Deploy as SaaS, single-tenant, private cloud, or fully air-gapped</li>
+          <li>
+            <strong style={{ color: "var(--text)" }}>New-rep ramp</strong> — a curated
+            starter checklist that turns into cited answers, so new AEs get productive fast.
+          </li>
+          <li>
+            <strong style={{ color: "var(--text)" }}>Live objection prep</strong> — a
+            one-click objection library that draws on your battlecards and case studies.
+          </li>
+          <li>Every answer is cited and shows its confidence — trustworthy under pressure.</li>
+          <li>
+            Managers control what&apos;s rep-visible vs. manager-only (e.g. floor pricing).
+          </li>
         </ul>
         <Link href="/login">
           <button>Open the app →</button>

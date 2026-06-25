@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.document import ClassificationLevel, IngestionStatus
+from app.models.document import ContentVisibility, IngestionStatus, SalesContentType
 
 
 class DocumentRead(BaseModel):
@@ -17,11 +17,11 @@ class DocumentRead(BaseModel):
     tenant_id: uuid.UUID
     owner_user_id: uuid.UUID
     filename: str
-    content_type: str
+    mime_type: str
     size_bytes: int
     sha256: str
-    classification_level: ClassificationLevel
-    department: str | None
+    content_type: SalesContentType
+    visibility: ContentVisibility
     status: IngestionStatus
     error_message: str | None
     page_count: int | None
