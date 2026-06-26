@@ -34,6 +34,10 @@ os.environ.setdefault("LLM_BASE_URL", "")
 os.environ.setdefault("LLM_API_KEY", "")
 os.environ.setdefault("OPENAI_API_KEY", "")
 os.environ.setdefault("ANTHROPIC_API_KEY", "")
+# The human-review/hold tests assert the gate's behavior, so pin it on here regardless of
+# a developer's local `.env` (the v1 product runs with it OFF). Tests that need it off set
+# it explicitly via monkeypatch.
+os.environ.setdefault("ENABLE_HUMAN_REVIEW", "true")
 
 import pytest
 import pytest_asyncio
