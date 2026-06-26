@@ -30,7 +30,7 @@ An enterprise-grade AI platform for querying private company documents via natur
 
 **Infrastructure**: Docker + Docker Compose, Fly.io/AWS/Azure/on-prem, MinIO or S3-compatible storage, GitHub Actions + Trivy.
 
-**LLM**: Anthropic Claude (default, zero-retention DPA), self-hosted vLLM for enterprise, local models for air-gapped.
+**LLM**: OpenAI (gpt-4o) default for v1; Anthropic Claude (zero-retention DPA) and self-hosted vLLM/Ollama also supported, swappable via `LLM_PROVIDER`. Local models for air-gapped.
 
 ## Core Architecture (From Spec)
 

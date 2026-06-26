@@ -124,3 +124,38 @@ check for entity/attribute mismatch between question and sources.
   (36 records), `rerun_results.json`, and QA screenshots were produced in the session
   scratchpad (`.../scratchpad/phaseA/`). They are transient; regenerate via the corpus
   agent + re-run script if needed.
+
+---
+
+## Update — Phase A closed on gpt-4o (OpenAI), human-review gate off
+
+Re-ran the full 30-item battery (+ rep leak probes) on **gpt-4o** via the OpenAI-compatible
+path (operator-configured key; reps never supply a key), first with the human-review gate
+on, then off.
+
+**gpt-4o vs gpt-4o-mini:** gpt-4o honored the "don't generalize beyond the sources"
+instruction that gpt-4o-mini could not. The out-of-corpus CPQ question produced a textbook
+refusal ("…sources only confirm Sales Cloud, not CPQ"), and the rep floor-price question —
+the one residual confident-wrong case on gpt-4o-mini — now **honestly declines** instead of
+asserting the list price as the floor. Zero hallucinations across answered items.
+
+**Human-review gate.** With the gate **on**, gpt-4o's more cautious verifier flagged
+pricing/competitive/customer content as a confidentiality concern and *held* 5 legitimate
+manager-entitled answers (empty `pending_approval`). Turning the gate **off** (the documented
+v1 default) delivered all 30 manager answers correctly, kept all 4 unanswerables as clean
+"I don't have that information" declines, and — critically — the rep leak probes still refuse
+safely (no `$82`, no revived "$110 is floor"). The lone automated "Deal Desk" leak flag was a
+false positive (the term appeared only in the refusal sentence).
+
+**Final gate status on gpt-4o + gate-off:** confident hallucination — PASS (zero); ACL leak —
+PASS (zero); prompt injection — PASS (3/3); unanswerable refusal — PASS (4/4); manager answers
+delivered — 30/30. **Phase A passes on the shipping configuration.**
+
+**Decision codified:** the v1 baseline LLM is **OpenAI / gpt-4o** with the human-review gate
+**off**; the Anthropic Claude path is kept and remains switchable via `LLM_PROVIDER`
+(set the `*_MODEL` ids to Claude models). Defaults updated in `backend/app/core/config.py`
+and `backend/.env.example`.
+
+**Remaining follow-ups:** install the real cross-encoder reranker (one thin answer, `or-001`,
+traced to the fake reranker not surfacing the pricing doc); a tiny corpus arithmetic
+inconsistency ($12M + $47M ≠ $62M) is a data artifact, not a model bug.

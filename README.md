@@ -112,7 +112,8 @@ or bring up the whole stack in containers with `docker compose --profile full up
 ## Tech stack
 
 **Backend**: Python 3.11, FastAPI, SQLAlchemy 2 (async), Alembic, pgvector/PostgreSQL 16,
-LangGraph, Anthropic + OpenAI-compatible LLMs. **Frontend**: Next.js 14 + TypeScript.
+LangGraph, OpenAI (gpt-4o) by default — Anthropic Claude + self-hosted (vLLM/Ollama) also
+supported via `LLM_PROVIDER`. **Frontend**: Next.js 14 + TypeScript.
 **Infra**: Docker, GitHub Actions, gitleaks + Trivy, optional Langfuse / vLLM.
 
 ## Project layout

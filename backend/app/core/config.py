@@ -110,16 +110,20 @@ class Settings(BaseSettings):
     RERANK_WEIGHT: float = 1.0
 
     # ── Multi-agent workflow + LLM (Phase 3) ──────────────────────────────────────────
-    # Baseline ("cloud") LLM provider:
+    # Baseline ("cloud") LLM provider. v1 default: "openai_compatible" pointed at OpenAI
+    # (set LLM_BASE_URL=https://api.openai.com/v1 + LLM_API_KEY). The Claude path is kept
+    # and fully supported — set LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY, and the
+    # *_MODEL ids below to Claude models (e.g. "claude-opus-4-8").
+    #   "openai_compatible" — OpenAI or any OpenAI-compatible endpoint (vLLM/Ollama/TGI).
     #   "anthropic"         — real Claude via the official SDK (needs ANTHROPIC_API_KEY).
-    #   "openai_compatible" — a self-hosted/OpenAI-compatible endpoint as the *baseline*
-    #                         (e.g. a single-tenant deploy that uses self-hosted for all).
     #   "fake"              — deterministic, offline dev/test.
-    LLM_PROVIDER: Literal["anthropic", "openai_compatible", "fake"] = "anthropic"
+    LLM_PROVIDER: Literal["anthropic", "openai_compatible", "fake"] = "openai_compatible"
     ANTHROPIC_API_KEY: str = ""
-    PLANNER_MODEL: str = "claude-sonnet-4-6"
-    VERIFIER_MODEL: str = "claude-haiku-4-5"
-    SYNTHESIZER_MODEL: str = "claude-opus-4-8"
+    # Per-node model ids for the baseline profile. Defaults target OpenAI; set Claude ids
+    # here when LLM_PROVIDER="anthropic".
+    PLANNER_MODEL: str = "gpt-4o"
+    VERIFIER_MODEL: str = "gpt-4o"
+    SYNTHESIZER_MODEL: str = "gpt-4o"
     SYNTHESIS_MAX_TOKENS: int = 4096
     # Below this verifier confidence (or on a confidentiality flag), answers route to
     # human review instead of being delivered autonomously — only when ENABLE_HUMAN_REVIEW
