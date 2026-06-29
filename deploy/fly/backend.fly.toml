@@ -26,10 +26,12 @@ primary_region = "iad"
   ENABLE_BILLING = "true"
   EMAIL_PROVIDER = "smtp"
   BILLING_PROVIDER = "stripe"
-  # Enterprise-only surfaces stay off in the v1 product.
+  # Enterprise-only surfaces stay off in the v1 product (the full "enterprise-off" profile).
   ENABLE_COMPLIANCE = "false"
   ENABLE_EVALS = "false"
   ENABLE_HUMAN_REVIEW = "false"
+  ENABLE_AUDIT = "false"
+  ENABLE_ENTERPRISE_ADMIN = "false"
   ENABLE_CONNECTORS = "false"
   # FRONTEND_BASE_URL and CORS_ALLOW_ORIGINS must point at the deployed frontend origin;
   # set them with `fly secrets set` (they vary per environment).

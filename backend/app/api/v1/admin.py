@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, client_ip, get_db, require_role
+from app.core.deps import CurrentUser, client_ip, get_db, require_feature, require_role
 from app.core.security import hash_password
 from app.errors import ConflictError, NotFoundError
 from app.models.api_key import ApiKey
@@ -52,6 +52,15 @@ from app.services.email.sender import get_email_sender
 from app.services.templates_data import TEMPLATES
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Enterprise admin surfaces (org groups, programmatic API keys, per-tenant LLM routing
+# policy) live on a separate router gated by ENABLE_ENTERPRISE_ADMIN — hidden in the v1
+# sales product. Core admin (users, invitations, templates) stays on `router`.
+enterprise_router = APIRouter(
+    prefix="/admin",
+    tags=["admin-enterprise"],
+    dependencies=[Depends(require_feature("ENABLE_ENTERPRISE_ADMIN"))],
+)
 
 _admin = require_role(UserRole.OWNER, UserRole.ADMIN)
 
@@ -237,7 +246,7 @@ async def revoke_invitation(
 
 
 # ── Groups ─────────────────────────────────────────────────────────────────────────
-@router.get("/groups", response_model=list[GroupRead])
+@enterprise_router.get("/groups", response_model=list[GroupRead])
 async def list_groups(
     current: CurrentUser = Depends(_admin),
     db: AsyncSession = Depends(get_db),
@@ -248,7 +257,7 @@ async def list_groups(
     return list(rows.all())
 
 
-@router.post("/groups", response_model=GroupRead, status_code=status.HTTP_201_CREATED)
+@enterprise_router.post("/groups", response_model=GroupRead, status_code=status.HTTP_201_CREATED)
 async def create_group(
     body: GroupCreate,
     request: Request,
@@ -289,7 +298,7 @@ async def _load_tenant_group(db: AsyncSession, current: CurrentUser, group_id: u
     return group
 
 
-@router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+@enterprise_router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_group(
     group_id: uuid.UUID,
     request: Request,
@@ -310,7 +319,7 @@ async def delete_group(
     )
 
 
-@router.post("/groups/{group_id}/members", status_code=status.HTTP_204_NO_CONTENT)
+@enterprise_router.post("/groups/{group_id}/members", status_code=status.HTTP_204_NO_CONTENT)
 async def add_group_member(
     group_id: uuid.UUID,
     body: GroupMemberAdd,
@@ -346,7 +355,9 @@ async def add_group_member(
     )
 
 
-@router.delete("/groups/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@enterprise_router.delete(
+    "/groups/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def remove_group_member(
     group_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -379,7 +390,7 @@ async def remove_group_member(
 
 
 # ── API keys (Phase 6) ─────────────────────────────────────────────────────────────
-@router.get("/api-keys", response_model=list[ApiKeyRead])
+@enterprise_router.get("/api-keys", response_model=list[ApiKeyRead])
 async def list_api_keys(
     current: CurrentUser = Depends(_admin),
     db: AsyncSession = Depends(get_db),
@@ -392,7 +403,9 @@ async def list_api_keys(
     return list(rows.all())
 
 
-@router.post("/api-keys", response_model=ApiKeyCreated, status_code=status.HTTP_201_CREATED)
+@enterprise_router.post(
+    "/api-keys", response_model=ApiKeyCreated, status_code=status.HTTP_201_CREATED
+)
 async def create_api_key(
     body: ApiKeyCreate,
     request: Request,
@@ -428,7 +441,7 @@ async def create_api_key(
     return ApiKeyCreated.model_validate({**fields, "key": full_key})
 
 
-@router.delete("/api-keys/{api_key_id}", status_code=status.HTTP_204_NO_CONTENT)
+@enterprise_router.delete("/api-keys/{api_key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_api_key(
     api_key_id: uuid.UUID,
     request: Request,
@@ -454,7 +467,7 @@ async def revoke_api_key(
 
 
 # ── Tenant settings (LLM routing policy, Phase 7) ────────────────────────────────────
-@router.get("/tenant/settings", response_model=TenantSettings)
+@enterprise_router.get("/tenant/settings", response_model=TenantSettings)
 async def get_tenant_settings(
     current: CurrentUser = Depends(_admin),
     db: AsyncSession = Depends(get_db),
@@ -466,7 +479,7 @@ async def get_tenant_settings(
     return TenantSettings.from_raw(tenant.settings)
 
 
-@router.put("/tenant/settings", response_model=TenantSettings)
+@enterprise_router.put("/tenant/settings", response_model=TenantSettings)
 async def update_tenant_settings(
     body: TenantSettingsUpdate,
     request: Request,

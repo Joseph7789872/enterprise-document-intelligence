@@ -137,12 +137,22 @@ class Settings(BaseSettings):
     # exercise them; the production v1 deployment sets them OFF (via env) to hide the
     # enterprise/compliance surface. (The MCP server lives in services/mcp_tools.py and is
     # not mounted on the REST app, so it needs no router flag.)
+    #
+    # The full "v1 enterprise-off" profile (all set false in deploy/fly/backend.fly.toml):
+    #   ENABLE_COMPLIANCE, ENABLE_EVALS, ENABLE_HUMAN_REVIEW, ENABLE_AUDIT,
+    #   ENABLE_ENTERPRISE_ADMIN.
     ENABLE_COMPLIANCE: bool = True  # /compliance (GDPR/DSR) router + SIEM audit export
     ENABLE_EVALS: bool = True  # /evals run-history router
     # Low-confidence / confidentiality human-approval gate. When OFF, low-confidence
     # answers are still delivered (with their confidence surfaced) rather than held —
     # an honest "here's what I found, I'm not fully sure" instead of a human gate.
     ENABLE_HUMAN_REVIEW: bool = True
+    # Audit-log read + SIEM-ready export surface (/audit). The app always WRITES audit
+    # events regardless; this only gates the read/export endpoints. OFF in the v1 product.
+    ENABLE_AUDIT: bool = True
+    # Enterprise admin surfaces: org groups, programmatic API keys, and per-tenant LLM
+    # routing policy (/admin/groups, /admin/api-keys, /admin/tenant/settings). OFF in v1.
+    ENABLE_ENTERPRISE_ADMIN: bool = True
 
     # ── Phase C: content connectors (URL import + Notion) ─────────────────────────────
     # External egress: fetching arbitrary URLs and the Notion API. OFF by default in

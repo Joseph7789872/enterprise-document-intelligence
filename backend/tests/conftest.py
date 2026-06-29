@@ -46,6 +46,11 @@ os.environ.setdefault("ENABLE_CONNECTORS", "true")
 os.environ.setdefault("ENABLE_BILLING", "true")
 # Phase D: send all email to the in-memory FakeEmailSender outbox — no SMTP, no network.
 os.environ.setdefault("EMAIL_PROVIDER", "fake")
+# Phase F: enterprise surfaces default ON in dev/test (OFF in the v1 prod product). Pin
+# them ON so the suite exercises /audit + the enterprise admin endpoints; gating tests
+# monkeypatch them OFF explicitly.
+os.environ.setdefault("ENABLE_AUDIT", "true")
+os.environ.setdefault("ENABLE_ENTERPRISE_ADMIN", "true")
 
 import pytest
 import pytest_asyncio

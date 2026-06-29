@@ -76,6 +76,10 @@ export default function SignupPage() {
           {busy ? "Creating…" : "Create workspace"}
         </button>
         {error && <p className="error">{error}</p>}
+        <p className="muted" style={{ marginTop: 12, fontSize: "0.85rem" }}>
+          By creating a workspace you agree to the <Link href="/terms">Terms</Link> and{" "}
+          <Link href="/privacy">Privacy Policy</Link>.
+        </p>
         <p className="muted" style={{ marginTop: 12 }}>
           Already have an account? <Link href="/login">Sign in</Link>
         </p>

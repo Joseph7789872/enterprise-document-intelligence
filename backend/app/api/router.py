@@ -25,12 +25,13 @@ from app.core.config import settings
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
-api_router.include_router(audit.router)
 api_router.include_router(documents.router)
 api_router.include_router(search.router)
 api_router.include_router(query.router)
 # Phase B: conversational chat threads (per-user).
 api_router.include_router(conversations.router)
+# Core admin (users, invitations, templates) — always on. The enterprise admin surfaces
+# (groups, api-keys, tenant LLM settings) live on admin.enterprise_router, mounted below.
 api_router.include_router(admin.router)
 # V1 sales: manager-curated ramp checklist + objection library (AE-readable).
 api_router.include_router(ramp.router)
@@ -41,7 +42,12 @@ api_router.include_router(segments.router)
 api_router.include_router(analytics.router)
 
 # Enterprise-only surfaces — mounted only when their v1 feature flag is on (off in the
-# production sales product; on in dev/test so the suite still covers them).
+# production sales product; on in dev/test so the suite still covers them). Each router
+# also carries a request-time require_feature guard so the off-state is testable.
+if settings.ENABLE_AUDIT:
+    api_router.include_router(audit.router)
+if settings.ENABLE_ENTERPRISE_ADMIN:
+    api_router.include_router(admin.enterprise_router)
 if settings.ENABLE_EVALS:
     api_router.include_router(evals.router)
 if settings.ENABLE_COMPLIANCE:

@@ -19,12 +19,16 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, client_ip, get_db, require_role
+from app.core.deps import CurrentUser, client_ip, get_db, require_feature, require_role
 from app.models.audit_log import AuditAction, AuditLog
 from app.models.user import UserRole
 from app.services import audit_service
 
-router = APIRouter(prefix="/audit", tags=["audit"])
+# Enterprise/SIEM surface — gated in the v1 sales product (ENABLE_AUDIT). The router-level
+# guard also makes the off-state testable while the route stays mounted in the test app.
+router = APIRouter(
+    prefix="/audit", tags=["audit"], dependencies=[Depends(require_feature("ENABLE_AUDIT"))]
+)
 
 
 class AuditLogRead(BaseModel):

@@ -15,9 +15,10 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import TokenError, TokenType, decode_token
 from app.db.session import get_session
-from app.errors import AuthenticationError, AuthorizationError
+from app.errors import AuthenticationError, AuthorizationError, NotFoundError
 from app.models.user import User, UserRole
 
 _bearer = HTTPBearer(auto_error=False)
@@ -80,5 +81,20 @@ def require_role(
         if user.role not in allowed:
             raise AuthorizationError("Insufficient role for this action.")
         return user
+
+    return _guard
+
+
+def require_feature(flag: str) -> Callable[[], Awaitable[None]]:
+    """Dependency factory: 404 the route unless ``settings.<flag>`` is truthy.
+
+    Used to fully hide enterprise surfaces in the v1 sales product. Reads the flag at
+    request time (not import time), so the off-state is testable by monkeypatching settings
+    while the route stays mounted in the shared test app.
+    """
+
+    async def _guard() -> None:
+        if not getattr(settings, flag, False):
+            raise NotFoundError("Not found.")
 
     return _guard
