@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type BillingOverview,
+  type Capabilities,
   type ContentType,
   type CurrentUser,
   type DocumentInfo,
@@ -28,6 +29,7 @@ import {
   deleteRampTopic,
   deleteSegment,
   getBilling,
+  getCapabilities,
   getMe,
   getNotionStatus,
   getToken,
@@ -69,6 +71,9 @@ export default function AdminPage() {
   const router = useRouter();
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [denied, setDenied] = useState(false);
+  // Client-visible feature flags — gate connector cards (URL import + Notion) so they
+  // don't render when ENABLE_CONNECTORS is off (their actions would 404).
+  const [caps, setCaps] = useState<Capabilities | null>(null);
 
   // Content
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
@@ -128,6 +133,8 @@ export default function AdminPage() {
   }, []);
 
   const refreshAll = useCallback(async () => {
+    const capsResult = await getCapabilities().catch(() => null);
+    setCaps(capsResult);
     await Promise.all([
       refreshDocs(),
       listUsers().then(setUsers).catch(() => {}),
@@ -136,10 +143,14 @@ export default function AdminPage() {
       listObjections().then(setObjections).catch(() => {}),
       listSegments().then(setSegments).catch(() => {}),
       listTemplates().then(setTemplates).catch(() => {}),
-      // Notion status is best-effort; connectors may be disabled (404).
-      getNotionStatus().then(setNotion).catch(() => setNotion(null)),
-      // Plan & usage is best-effort; billing may be disabled (404).
-      getBilling().then(setBilling).catch(() => setBilling(null)),
+      // Notion status only when connectors are enabled (otherwise the card is hidden).
+      capsResult?.connectors
+        ? getNotionStatus().then(setNotion).catch(() => setNotion(null))
+        : Promise.resolve(),
+      // Plan & usage only when billing is enabled (otherwise the card is hidden).
+      capsResult?.billing
+        ? getBilling().then(setBilling).catch(() => setBilling(null))
+        : Promise.resolve(),
     ]);
   }, [refreshDocs]);
 
@@ -486,6 +497,7 @@ export default function AdminPage() {
                 <th>Type</th>
                 <th>Visibility</th>
                 <th>Status</th>
+                <th>Chunks</th>
                 <th />
               </tr>
             </thead>
@@ -498,6 +510,7 @@ export default function AdminPage() {
                   <td>
                     <span className="badge">{d.status}</span>
                   </td>
+                  <td>{d.chunk_count}</td>
                   <td style={{ textAlign: "right" }}>
                     <button
                       onClick={() => onRemoveDoc(d.id)}
@@ -517,12 +530,11 @@ export default function AdminPage() {
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Import content</h2>
         <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
-          Bulk-upload many files at once, import a public web page by URL, or sync pages
-          from Notion. New content uses the content type, visibility, and segments selected
-          in the upload form above.
+          Bulk-upload many files at once{caps?.connectors ? ", or import a public web page by URL" : ""}.
+          New content uses the content type, visibility, and segments selected in the upload form above.
         </p>
 
-        <form onSubmit={onBulkUpload} style={{ marginBottom: 20 }}>
+        <form onSubmit={onBulkUpload} style={{ marginBottom: caps?.connectors ? 20 : 0 }}>
           <label htmlFor="bulk">Bulk upload (PDF, DOCX, TXT — select several)</label>
           <input ref={bulkRef} id="bulk" type="file" accept=".pdf,.docx,.txt" multiple required />
           <button type="submit" disabled={bulkBusy}>
@@ -531,23 +543,26 @@ export default function AdminPage() {
           {bulkMsg && <p className="muted" style={{ marginTop: 12 }}>{bulkMsg}</p>}
         </form>
 
-        <form onSubmit={onImportUrl}>
-          <label htmlFor="url">Import from URL</label>
-          <input
-            id="url"
-            type="url"
-            value={importUrlValue}
-            onChange={(e) => setImportUrlValue(e.target.value)}
-            placeholder="https://example.com/our-pricing-page"
-          />
-          <button type="submit" disabled={urlBusy || !importUrlValue.trim()}>
-            {urlBusy ? "Importing…" : "Import URL"}
-          </button>
-          {urlMsg && <p className="muted" style={{ marginTop: 12 }}>{urlMsg}</p>}
-        </form>
+        {caps?.connectors && (
+          <form onSubmit={onImportUrl}>
+            <label htmlFor="url">Import from URL</label>
+            <input
+              id="url"
+              type="url"
+              value={importUrlValue}
+              onChange={(e) => setImportUrlValue(e.target.value)}
+              placeholder="https://example.com/our-pricing-page"
+            />
+            <button type="submit" disabled={urlBusy || !importUrlValue.trim()}>
+              {urlBusy ? "Importing…" : "Import URL"}
+            </button>
+            {urlMsg && <p className="muted" style={{ marginTop: 12 }}>{urlMsg}</p>}
+          </form>
+        )}
       </div>
 
-      {/* Notion connector */}
+      {/* Notion connector — only when connectors are enabled */}
+      {caps?.connectors && (
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Notion</h2>
         <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
@@ -592,6 +607,7 @@ export default function AdminPage() {
           {notionMsg && <p className="muted" style={{ marginTop: 12 }}>{notionMsg}</p>}
         </form>
       </div>
+      )}
 
       {/* Segments (ICP) */}
       <div className="card">

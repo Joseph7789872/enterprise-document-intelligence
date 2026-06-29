@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, client_ip, get_db, require_feature, require_role
 from app.core.security import hash_password
-from app.errors import ConflictError, NotFoundError
+from app.errors import AppError, ConflictError, NotFoundError
 from app.models.api_key import ApiKey
 from app.models.audit_log import AuditAction
 from app.models.group import Group
@@ -136,6 +136,8 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     user = await _load_tenant_user(db, current, user_id)
+    if body.is_active is False and user.id == current.id:
+        raise AppError("You cannot deactivate your own account.")
     if body.role is not None:
         user.role = body.role
     if body.is_active is not None:
@@ -163,6 +165,8 @@ async def deactivate_user(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     user = await _load_tenant_user(db, current, user_id)
+    if user.id == current.id:
+        raise AppError("You cannot deactivate your own account.")
     user.is_active = False
     user.deleted_at = datetime.now(UTC)
     await db.flush()

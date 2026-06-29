@@ -7,6 +7,7 @@ import {
   type BillingOverview,
   type PlanInfo,
   getBilling,
+  getCapabilities,
   getToken,
   listPlans,
   openBillingPortal,
@@ -30,10 +31,18 @@ export default function BillingPage() {
       router.replace("/login");
       return;
     }
-    Promise.all([getBilling(), listPlans()])
-      .then(([o, p]) => {
-        setOverview(o);
-        setPlans(p);
+    // Billing may be disabled (the whole API surface 404s). Don't render a broken
+    // shell — bounce back to admin when the feature is off.
+    getCapabilities()
+      .then((caps) => {
+        if (!caps.billing) {
+          router.replace("/admin");
+          return null;
+        }
+        return Promise.all([getBilling(), listPlans()]).then(([o, p]) => {
+          setOverview(o);
+          setPlans(p);
+        });
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load billing"))
       .finally(() => setLoaded(true));

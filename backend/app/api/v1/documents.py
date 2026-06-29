@@ -60,6 +60,11 @@ class UnsupportedMediaTypeError(AppError):
     message = "Unsupported file type."
 
 
+class EmptyFileError(AppError):
+    status_code = 422
+    message = "Uploaded file is empty."
+
+
 class MalwareDetectedError(AppError):
     status_code = 422
     message = "Uploaded file was rejected by malware scanning."
@@ -101,7 +106,7 @@ async def upload_document(
             f"File exceeds the {settings.MAX_UPLOAD_MB} MB limit."
         )
     if not data:
-        raise UnsupportedMediaTypeError("Uploaded file is empty.")
+        raise EmptyFileError("Uploaded file is empty.")
 
     try:
         document = await intake_document(
@@ -133,7 +138,7 @@ async def upload_document(
                 trace_id=get_trace_id(),
             )
             raise MalwareDetectedError(f"Malware signature detected: {exc.signature}.") from exc
-        raise UnsupportedMediaTypeError("Uploaded file is empty.") from exc
+        raise EmptyFileError("Uploaded file is empty.") from exc
 
     await db.commit()
     return UploadResponse(id=document.id, filename=filename, status=IngestionStatus.PENDING)

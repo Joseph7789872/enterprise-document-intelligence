@@ -47,6 +47,25 @@ async def test_admin_creates_and_updates_user(client, acme) -> None:
 
 
 @pytest.mark.asyncio
+async def test_owner_cannot_deactivate_self(client, acme) -> None:
+    me = await client.get("/auth/me", headers=acme["headers"])
+    own_id = me.json()["id"]
+
+    # Neither the PATCH nor the DELETE path may deactivate the caller's own account.
+    patched = await client.patch(
+        f"/admin/users/{own_id}", json={"is_active": False}, headers=acme["headers"]
+    )
+    assert patched.status_code == 400, patched.text
+
+    deleted = await client.delete(f"/admin/users/{own_id}", headers=acme["headers"])
+    assert deleted.status_code == 400, deleted.text
+
+    # And the account is still active afterward.
+    me_again = await client.get("/auth/me", headers=acme["headers"])
+    assert me_again.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_duplicate_user_email_conflicts(client, acme) -> None:
     body = {"email": "dup@acme.com", "password": "a-strong-password-123", "role": "member"}
     assert (await client.post("/admin/users", json=body, headers=acme["headers"])).status_code == 201

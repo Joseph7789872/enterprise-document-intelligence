@@ -84,19 +84,27 @@ export default function ChatPage() {
       router.replace("/login");
       return;
     }
-    setReady(true);
-    listObjections().then(setObjections).catch(() => {});
-    listSegments().then(setSegments).catch(() => {});
-    refreshConversations();
+    // Confirm the token is valid before rendering the (auth-gated) chat UI. An expired or
+    // invalid token would otherwise paint the full UI and fire a burst of 401s before any
+    // redirect. Only mark ready — and fire the dependent loads — once /auth/me succeeds.
     getMe()
-      .then((u) => setManager(isManager(u.role)))
-      .catch(() => {});
-    // Deep-link from the ramp checklist: /app?q=<question> starts a fresh thread.
-    const q = new URLSearchParams(window.location.search).get("q");
-    if (q && !autoRan.current) {
-      autoRan.current = true;
-      void ask(q);
-    }
+      .then((u) => {
+        setManager(isManager(u.role));
+        setReady(true);
+        listObjections().then(setObjections).catch(() => {});
+        listSegments().then(setSegments).catch(() => {});
+        refreshConversations();
+        // Deep-link from the ramp checklist: /app?q=<question> starts a fresh thread.
+        const q = new URLSearchParams(window.location.search).get("q");
+        if (q && !autoRan.current) {
+          autoRan.current = true;
+          void ask(q);
+        }
+      })
+      .catch(() => {
+        clearToken();
+        router.replace("/login");
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 

@@ -44,6 +44,14 @@ async def test_upload_rejects_unsupported_extension(client, acme) -> None:
 
 
 @pytest.mark.asyncio
+async def test_upload_rejects_empty_file(client, acme) -> None:
+    r = await client.post(
+        "/documents", files=_txt_upload(content=b""), headers=acme["headers"]
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
 async def test_upload_rejects_oversize(client, acme, monkeypatch) -> None:
     from app.core.config import settings
 

@@ -428,6 +428,18 @@ export async function uploadDocument(
   return (await res.json()) as DocumentInfo;
 }
 
+// Client-visible feature flags (unauthenticated) so the UI can hide gated surfaces
+// (connectors, billing) instead of rendering cards whose actions 404.
+export interface Capabilities {
+  connectors: boolean;
+  billing: boolean;
+  signup: boolean;
+}
+
+export async function getCapabilities(): Promise<Capabilities> {
+  return request<Capabilities>("/capabilities");
+}
+
 // ── Phase C: bulk upload, URL import, connectors, templates ───────────────────────────
 export interface BatchItemResult {
   filename: string;

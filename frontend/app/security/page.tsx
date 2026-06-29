@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { LEGAL } from "@/lib/legal";
+import { LEGAL, TEMPLATE_NOTE } from "@/lib/legal";
 
 export const metadata = { title: "Security — Sales Assistant" };
 
 export default function SecurityPage() {
   return (
     <main>
+      <div className="banner warn">{TEMPLATE_NOTE}</div>
       <h1>Security overview</h1>
       <p className="muted">
         How {LEGAL.product} protects your data. For a security questionnaire or the latest details,
