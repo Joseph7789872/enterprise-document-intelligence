@@ -89,6 +89,16 @@ class AuditAction(str, enum.Enum):
     URL_IMPORTED = "document.url_imported"
     CONNECTOR_TOKEN_SET = "connector.token_set"  # noqa: S105 - audit action name, not a secret
     CONNECTOR_SYNCED = "connector.synced"
+    # Hosted SaaS: invites, password reset, billing (Phase D)
+    USER_INVITED = "user.invited"
+    INVITE_ACCEPTED = "invite.accepted"
+    INVITE_REVOKED = "invite.revoked"
+    PASSWORD_RESET_REQUESTED = "password.reset_requested"  # noqa: S105 - action name, not a secret
+    PASSWORD_RESET_COMPLETED = "password.reset_completed"  # noqa: S105 - action name, not a secret
+    SUBSCRIPTION_CREATED = "subscription.created"
+    SUBSCRIPTION_UPDATED = "subscription.updated"
+    CHECKOUT_STARTED = "billing.checkout_started"
+    BILLING_PORTAL_OPENED = "billing.portal_opened"
 
 
 class AuditLog(Base):

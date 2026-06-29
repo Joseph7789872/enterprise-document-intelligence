@@ -37,3 +37,21 @@ class RegisterResponse(BaseModel):
     tenant: TenantRead
     user: UserRead
     tokens: TokenPair
+
+
+# ── Phase D: invitations + password reset ──────────────────────────────────────────
+class AcceptInviteRequest(BaseModel):
+    """Accept an emailed invitation by choosing a password."""
+
+    token: str = Field(min_length=1)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class ForgotPasswordRequest(BaseModel):
+    tenant_slug: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1)
+    new_password: str = Field(min_length=12, max_length=128)

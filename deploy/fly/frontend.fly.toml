@@ -1,0 +1,28 @@
+# Fly.io config for the Sales Assistant frontend (Phase D hosted deploy).
+# Deploy from the frontend/ directory:
+#   cd frontend && fly deploy -c ../deploy/fly/frontend.fly.toml
+# The frontend resolves the backend URL at RUNTIME from BACKEND_API_URL (via the
+# /api/runtime-config route), so the same image works against any backend — set
+# BACKEND_API_URL with `fly secrets set` rather than rebuilding. See deploy/fly/README.md.
+
+app = "sales-assistant-web"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  # BACKEND_API_URL is set via `fly secrets set` to the backend app's public URL, e.g.
+  #   fly secrets set BACKEND_API_URL=https://sales-assistant-api.fly.dev -a sales-assistant-web
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

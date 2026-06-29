@@ -41,6 +41,11 @@ os.environ.setdefault("ENABLE_HUMAN_REVIEW", "true")
 # Phase C: connectors (URL import + Notion) default OFF in prod; pin ON so the suite
 # exercises them. Tests use injected Fake fetcher/Notion clients — no real egress.
 os.environ.setdefault("ENABLE_CONNECTORS", "true")
+# Phase D: billing defaults OFF in prod; pin ON so the suite exercises plan-limit
+# enforcement + the /billing surface against an injected FakeBillingProvider (no Stripe).
+os.environ.setdefault("ENABLE_BILLING", "true")
+# Phase D: send all email to the in-memory FakeEmailSender outbox — no SMTP, no network.
+os.environ.setdefault("EMAIL_PROVIDER", "fake")
 
 import pytest
 import pytest_asyncio

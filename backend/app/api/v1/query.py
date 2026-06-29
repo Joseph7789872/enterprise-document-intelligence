@@ -26,7 +26,7 @@ from app.models.query import Query, QueryStatus
 from app.models.user import UserRole
 from app.observability.tracing import start_trace
 from app.schemas.query import AnswerResponse, CitationOut, QueryRead, QueryRequest
-from app.services import audit_service
+from app.services import audit_service, billing_service
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -153,6 +153,8 @@ async def ask(
     db: AsyncSession = Depends(get_db),
 ) -> AnswerResponse:
     """Run the full multi-agent workflow and return a cited answer (or a pending hold)."""
+    # Plan-limit gate (no-op unless ENABLE_BILLING): block once the monthly-query cap is hit.
+    await billing_service.enforce_quota(db, current.tenant_id, "queries")
     await audit_service.write_event(
         db,
         tenant_id=current.tenant_id,
@@ -227,6 +229,9 @@ async def ask_stream(
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Stream the final answer token-by-token (SSE). Low-confidence → a pending event."""
+    # Enforce the monthly-query cap before the stream starts (so it surfaces as a clean
+    # 402, not a mid-stream error). No-op unless ENABLE_BILLING.
+    await billing_service.enforce_quota(db, current.tenant_id, "queries")
     runner = _runner(db, current)
 
     async def generate() -> AsyncIterator[str]:

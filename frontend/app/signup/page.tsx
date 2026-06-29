@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { login } from "@/lib/api";
+import { register } from "@/lib/api";
 
-export default function LoginPage() {
+export default function SignupPage() {
   const router = useRouter();
+  const [tenantName, setTenantName] = useState("");
   const [tenantSlug, setTenantSlug] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,10 +19,10 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await login(tenantSlug, email, password);
+      await register(tenantName, tenantSlug, email, password);
       router.push("/app");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Sign up failed");
     } finally {
       setBusy(false);
     }
@@ -29,20 +30,30 @@ export default function LoginPage() {
 
   return (
     <main>
-      <h1>Sign in</h1>
-      <p className="muted">Use the credentials of a registered tenant user.</p>
+      <h1>Create your workspace</h1>
+      <p className="muted">Start a free trial — no credit card required.</p>
       <form className="card" onSubmit={onSubmit}>
-        <label htmlFor="tenant">Tenant slug</label>
+        <label htmlFor="tname">Company name</label>
         <input
-          id="tenant"
+          id="tname"
+          type="text"
+          value={tenantName}
+          onChange={(e) => setTenantName(e.target.value)}
+          placeholder="Acme Inc."
+          required
+        />
+        <label htmlFor="tslug">Workspace identifier</label>
+        <input
+          id="tslug"
           type="text"
           value={tenantSlug}
-          onChange={(e) => setTenantSlug(e.target.value)}
+          onChange={(e) => setTenantSlug(e.target.value.toLowerCase())}
           placeholder="acme"
+          pattern="[a-z0-9][a-z0-9-]*"
           autoComplete="organization"
           required
         />
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">Your email</label>
         <input
           id="email"
           type="email"
@@ -51,23 +62,22 @@ export default function LoginPage() {
           autoComplete="username"
           required
         />
-        <label htmlFor="password">Password</label>
+        <label htmlFor="password">Password (12+ characters)</label>
         <input
           id="password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
+          autoComplete="new-password"
+          minLength={12}
           required
         />
         <button type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? "Creating…" : "Create workspace"}
         </button>
         {error && <p className="error">{error}</p>}
         <p className="muted" style={{ marginTop: 12 }}>
-          <Link href="/forgot-password">Forgot password?</Link>
-          {" · "}
-          New here? <Link href="/signup">Create an account</Link>
+          Already have an account? <Link href="/login">Sign in</Link>
         </p>
       </form>
     </main>

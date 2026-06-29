@@ -20,6 +20,7 @@ from app.models.api_key import ApiKey
 from app.models.audit_log import AuditAction
 from app.models.group import Group
 from app.models.group_membership import GroupMembership
+from app.models.invitation import Invitation
 from app.models.tenant import Tenant
 from app.models.user import User, UserRole
 from app.schemas.acl import (
@@ -30,6 +31,7 @@ from app.schemas.acl import (
     GroupRead,
 )
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreated, ApiKeyRead
+from app.schemas.invitation import InvitationCreate, InvitationRead
 from app.schemas.templates import (
     TemplateApplyRequest,
     TemplateApplyResponse,
@@ -38,7 +40,15 @@ from app.schemas.templates import (
 )
 from app.schemas.tenant import TenantSettings, TenantSettingsUpdate
 from app.schemas.user import UserRead
-from app.services import api_key_service, audit_service, template_service
+from app.services import (
+    api_key_service,
+    audit_service,
+    billing_service,
+    invitation_service,
+    template_service,
+)
+from app.services.email import templates as email_templates
+from app.services.email.sender import get_email_sender
 from app.services.templates_data import TEMPLATES
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -74,6 +84,9 @@ async def create_user(
     )
     if existing is not None:
         raise ConflictError("A user with that email already exists in this tenant.")
+
+    # Seat-limit gate (no-op unless ENABLE_BILLING).
+    await billing_service.enforce_quota(db, current.tenant_id, "seats")
 
     user = User(
         tenant_id=current.tenant_id,
@@ -151,6 +164,73 @@ async def deactivate_user(
         actor_user_id=current.id,
         resource_type="user",
         resource_id=str(user.id),
+        ip_address=client_ip(request),
+        outcome="allow",
+    )
+
+
+# ── Invitations (Phase D) ────────────────────────────────────────────────────────────
+@router.get("/invitations", response_model=list[InvitationRead])
+async def list_invitations(
+    current: CurrentUser = Depends(_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[Invitation]:
+    return await invitation_service.list_pending(db, current.tenant_id)
+
+
+@router.post("/invitations", response_model=InvitationRead, status_code=status.HTTP_201_CREATED)
+async def create_invitation(
+    body: InvitationCreate,
+    request: Request,
+    current: CurrentUser = Depends(_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Invitation:
+    """Invite a teammate by email. Seat-limited; emails a single-use accept link."""
+    invitation, raw_token = await invitation_service.create_invitation(
+        db,
+        tenant_id=current.tenant_id,
+        inviter_id=current.id,
+        email=body.email,
+        role=body.role,
+    )
+    tenant = await db.get(Tenant, current.tenant_id)
+    tenant_name = tenant.name if tenant is not None else "your team"
+    await get_email_sender().send(
+        email_templates.invite_email(
+            invitation.email, token=raw_token, tenant_name=tenant_name, role=invitation.role.value
+        )
+    )
+    await audit_service.write_event(
+        db,
+        tenant_id=current.tenant_id,
+        action=AuditAction.USER_INVITED,
+        actor_user_id=current.id,
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+        metadata={"email": invitation.email, "role": invitation.role.value},
+        ip_address=client_ip(request),
+        outcome="allow",
+    )
+    return invitation
+
+
+@router.delete("/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_invitation(
+    invitation_id: uuid.UUID,
+    request: Request,
+    current: CurrentUser = Depends(_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    invitation = await invitation_service.revoke(
+        db, tenant_id=current.tenant_id, invitation_id=invitation_id
+    )
+    await audit_service.write_event(
+        db,
+        tenant_id=current.tenant_id,
+        action=AuditAction.INVITE_REVOKED,
+        actor_user_id=current.id,
+        resource_type="invitation",
+        resource_id=str(invitation.id),
         ip_address=client_ip(request),
         outcome="allow",
     )

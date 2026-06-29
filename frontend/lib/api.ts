@@ -1,9 +1,30 @@
-// Thin typed client for the EDIP backend. The base URL is configured at build/runtime
-// via NEXT_PUBLIC_API_URL (defaults to the local dev backend). The bearer token is held
-// in localStorage — adequate for this demo; a production SPA should use httpOnly cookies.
+// Thin typed client for the EDIP backend. The base URL is resolved at RUNTIME from the
+// Next route handler /api/runtime-config (which reads BACKEND_API_URL on the server), so a
+// single frontend image can target any backend in a hosted deploy. It falls back to the
+// build-time NEXT_PUBLIC_API_URL (and finally localhost) for local dev. The bearer token is
+// held in localStorage — adequate for this demo; a production SPA should use httpOnly cookies.
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BUILD_TIME_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+let resolvedBase: string | null = null;
+let basePromise: Promise<string> | null = null;
+
+async function apiBase(): Promise<string> {
+  if (resolvedBase) return resolvedBase;
+  // On the server (SSR) there is no /api/runtime-config to call — use the env value.
+  if (typeof window === "undefined") {
+    resolvedBase = BUILD_TIME_API_URL;
+    return resolvedBase;
+  }
+  if (!basePromise) {
+    basePromise = fetch("/api/runtime-config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => (c && c.apiUrl ? (c.apiUrl as string) : BUILD_TIME_API_URL))
+      .catch(() => BUILD_TIME_API_URL);
+  }
+  resolvedBase = await basePromise;
+  return resolvedBase;
+}
 
 const TOKEN_KEY = "edip_token";
 
@@ -26,7 +47,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+  const res = await fetch(`${await apiBase()}${path}`, { ...init, headers });
   if (!res.ok) {
     let detail = `Request failed (${res.status})`;
     try {
@@ -129,7 +150,7 @@ export async function streamAnswer(
   conversationId?: string | null,
 ): Promise<void> {
   const token = getToken();
-  const res = await fetch(`${API_URL}/query/stream`, {
+  const res = await fetch(`${await apiBase()}/query/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -389,7 +410,7 @@ export async function uploadDocument(
   form.append("visibility", visibility);
   for (const sid of segmentIds) form.append("segment_ids", sid);
   const token = getToken();
-  const res = await fetch(`${API_URL}/documents`, {
+  const res = await fetch(`${await apiBase()}/documents`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: form,
@@ -427,7 +448,7 @@ export async function uploadDocumentsBatch(
   form.append("visibility", visibility);
   for (const sid of segmentIds) form.append("segment_ids", sid);
   const token = getToken();
-  const res = await fetch(`${API_URL}/documents/batch`, {
+  const res = await fetch(`${await apiBase()}/documents/batch`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: form,
@@ -507,4 +528,130 @@ export async function applyTemplate(templateKey: string): Promise<TemplateApplyR
     method: "POST",
     body: JSON.stringify({ template_key: templateKey }),
   });
+}
+
+// ── Phase D: self-serve signup ────────────────────────────────────────────────────────
+export interface RegisterResponse {
+  tenant: { id: string; name: string; slug: string };
+  user: CurrentUser;
+  tokens: TokenPair;
+}
+
+export async function register(
+  tenantName: string,
+  tenantSlug: string,
+  email: string,
+  password: string,
+): Promise<void> {
+  const data = await request<RegisterResponse>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({
+      tenant_name: tenantName,
+      tenant_slug: tenantSlug,
+      email,
+      password,
+    }),
+  });
+  setToken(data.tokens.access_token);
+}
+
+// ── Phase D: password reset (public) ──────────────────────────────────────────────────
+export async function forgotPassword(tenantSlug: string, email: string): Promise<void> {
+  await request<{ detail: string }>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ tenant_slug: tenantSlug, email }),
+  });
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  await request<{ detail: string }>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+}
+
+// ── Phase D: invitation acceptance (public) ───────────────────────────────────────────
+export interface AcceptInviteResponse {
+  user_id: string;
+  tenant_id: string;
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+export async function acceptInvite(token: string, password: string): Promise<void> {
+  const data = await request<AcceptInviteResponse>("/auth/accept-invite", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  });
+  setToken(data.access_token);
+}
+
+// ── Phase D: manager invitations ──────────────────────────────────────────────────────
+export interface Invitation {
+  id: string;
+  email: string;
+  role: Role;
+  status: "pending" | "accepted" | "revoked";
+  expires_at: string;
+  created_at: string;
+}
+
+export async function listInvitations(): Promise<Invitation[]> {
+  return request<Invitation[]>("/admin/invitations");
+}
+
+export async function createInvitation(email: string, role: Role = "member"): Promise<Invitation> {
+  return request<Invitation>("/admin/invitations", {
+    method: "POST",
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+export async function revokeInvitation(id: string): Promise<void> {
+  await request<void>(`/admin/invitations/${id}`, { method: "DELETE" });
+}
+
+// ── Phase D: billing (mounted only when ENABLE_BILLING) ───────────────────────────────
+export interface PlanLimits {
+  seats: number | null;
+  documents: number | null;
+  queries_per_month: number | null;
+}
+
+export interface PlanInfo {
+  key: string;
+  name: string;
+  price_display: string;
+  limits: PlanLimits;
+}
+
+export interface BillingOverview {
+  subscription: {
+    plan_key: string;
+    status: "trialing" | "active" | "past_due" | "canceled";
+    seats: number;
+    current_period_end: string | null;
+  };
+  plan: PlanInfo;
+  usage: { users: number; documents: number; queries_this_period: number };
+}
+
+export async function getBilling(): Promise<BillingOverview> {
+  return request<BillingOverview>("/billing");
+}
+
+export async function listPlans(): Promise<PlanInfo[]> {
+  return request<PlanInfo[]>("/billing/plans");
+}
+
+export async function startCheckout(planKey: string): Promise<{ checkout_url: string }> {
+  return request<{ checkout_url: string }>("/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan_key: planKey }),
+  });
+}
+
+export async function openBillingPortal(): Promise<{ portal_url: string }> {
+  return request<{ portal_url: string }>("/billing/portal", { method: "POST" });
 }

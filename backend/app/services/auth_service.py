@@ -20,10 +20,11 @@ from app.core.security import (
     verify_password,
 )
 from app.models.audit_log import AuditAction
+from app.models.subscription import SubscriptionStatus
 from app.models.tenant import Tenant
 from app.models.user import User, UserRole
 from app.schemas.auth import TokenPair
-from app.services import audit_service
+from app.services import audit_service, billing_service
 
 
 class AuthError(Exception):
@@ -95,6 +96,22 @@ async def register_tenant_and_owner(
         resource_type="user",
         resource_id=str(owner.id),
         metadata={"role": owner.role.value},
+        ip_address=ip_address,
+    )
+
+    # Start the tenant on the trial plan. Harmless when ENABLE_BILLING is off (the row
+    # simply isn't enforced); needed so plan/usage are available the moment billing is on.
+    sub = await billing_service.ensure_subscription(
+        session, tenant_id=tenant.id, status=SubscriptionStatus.TRIALING
+    )
+    await audit_service.write_event(
+        session,
+        tenant_id=tenant.id,
+        action=AuditAction.SUBSCRIPTION_CREATED,
+        actor_user_id=owner.id,
+        resource_type="subscription",
+        resource_id=str(sub.id),
+        metadata={"plan_key": sub.plan_key, "status": sub.status.value},
         ip_address=ip_address,
     )
 

@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.crypto import encrypt
 from app.models.audit_log import AuditAction
 from app.models.document import ContentVisibility, Document, IngestionStatus, SalesContentType
-from app.services import audit_service, malware_scan, segment_service
+from app.services import audit_service, billing_service, malware_scan, segment_service
 from app.services.ingestion import process_document
 from app.storage import document_storage_key, get_storage
 
@@ -61,6 +61,11 @@ async def intake_document(
     scan = malware_scan.scan(data)
     if not scan.clean:
         raise IntakeError("malware", scan.signature)
+
+    # Plan-limit gate (no-op unless ENABLE_BILLING): blocks once the tenant hits its
+    # document cap. Covers every source — single/bulk upload, URL import, Notion sync —
+    # since all of them funnel through here.
+    await billing_service.enforce_quota(db, tenant_id, "documents")
 
     document_id = uuid.uuid4()
     storage_key = document_storage_key(tenant_id, document_id)

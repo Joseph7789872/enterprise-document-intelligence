@@ -42,6 +42,14 @@ class NotFoundError(AppError):
     message = "The requested resource was not found."
 
 
+class PlanLimitError(AppError):
+    """A tenant has reached a limit of its current billing plan (seats / documents /
+    monthly queries). Surfaced as 402 Payment Required so the UI can prompt an upgrade."""
+
+    status_code = 402
+    message = "Plan limit reached. Upgrade to continue."
+
+
 class LLMRoutingError(AppError):
     """Raised when policy requires a self-hosted model for a document but none is
     configured. Fail-closed: sensitive content is never sent to the cloud as a fallback.

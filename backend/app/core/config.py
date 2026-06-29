@@ -152,6 +152,42 @@ class Settings(BaseSettings):
     URL_IMPORT_MAX_BYTES: int = 5 * 1024 * 1024
     NOTION_API_BASE: str = "https://api.notion.com/v1"
 
+    # ── Phase D: outbound transactional email (invites + password reset) ──────────────
+    # "smtp" (aiosmtplib against any relay) or "fake" (in-memory outbox; the offline
+    # default for dev/CI). Resolved by effective_email_provider, which falls back to
+    # "fake" in development when SMTP_HOST is unset.
+    EMAIL_PROVIDER: Literal["smtp", "fake"] = "smtp"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "Sales Assistant <noreply@example.com>"
+    SMTP_STARTTLS: bool = True
+    # Public base URL of the frontend — used to build invite/reset links in emails.
+    FRONTEND_BASE_URL: str = "http://localhost:3000"
+    INVITE_TOKEN_TTL_HOURS: int = 72
+    RESET_TOKEN_TTL_HOURS: int = 2
+
+    # ── Phase D: self-serve signup ────────────────────────────────────────────────────
+    # Gates the public POST /auth/register endpoint + the signup page. ON for the SaaS
+    # product; turn OFF for single-tenant / private / air-gapped builds.
+    ENABLE_SIGNUP: bool = True
+
+    # ── Phase D: billing + plan limits ────────────────────────────────────────────────
+    # OFF by default (like ENABLE_CONNECTORS): plan-limit enforcement only *activates*
+    # when this is on. The test suite pins it ON in conftest and drives a FakeBilling
+    # provider — no Stripe, no network.
+    ENABLE_BILLING: bool = False
+    BILLING_PROVIDER: Literal["stripe", "fake"] = "stripe"
+    STRIPE_API_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    # Stripe price ids per paid plan (from your Stripe dashboard). Referenced by
+    # services/plans_data.py; empty until you wire real Stripe products.
+    STRIPE_PRICE_PRO: str = ""
+    STRIPE_PRICE_BUSINESS: str = ""
+    # Plan assigned to a tenant at signup (see services/plans_data.py).
+    DEFAULT_PLAN_KEY: str = "trial"
+
     # ── Self-hosted LLM + deployment modes (Phase 7) ──────────────────────────────────
     # The self-hosted "profile" used by the model router for sensitive documents (and as
     # the baseline when LLM_PROVIDER=openai_compatible / in private/air-gapped modes).
@@ -290,6 +326,33 @@ class Settings(BaseSettings):
         return self.LLM_PROVIDER
 
     @property
+    def effective_email_provider(self) -> str:
+        """Resolve the email provider, falling back to 'fake' in development when SMTP is
+        selected but no SMTP_HOST is configured (mirrors the embedding/LLM fallbacks).
+        Outside development this never silently downgrades — the production validator
+        requires SMTP_HOST when EMAIL_PROVIDER=smtp."""
+        dev = self.ENVIRONMENT == "development"
+        if dev and self.EMAIL_PROVIDER == "smtp" and not self.SMTP_HOST:
+            return "fake"
+        return self.EMAIL_PROVIDER
+
+    @property
+    def effective_billing_provider(self) -> str:
+        """Resolve the billing provider, falling back to 'fake' when Stripe is selected
+        but the optional [billing] extra isn't importable, or (in development) when no
+        STRIPE_API_KEY is configured. Keeps the default install + offline suite running
+        on the deterministic FakeBillingProvider; the prod validator refuses the silent
+        downgrade outside development."""
+        if self.BILLING_PROVIDER == "stripe":
+            import importlib.util
+
+            if importlib.util.find_spec("stripe") is None:
+                return "fake"
+            if not self.STRIPE_API_KEY and self.ENVIRONMENT == "development":
+                return "fake"
+        return self.BILLING_PROVIDER
+
+    @property
     def self_hosted_llm_configured(self) -> bool:
         """True when a self-hosted OpenAI-compatible LLM profile is available to the
         router (an endpoint URL is set). The router fails closed when a sensitive route
@@ -418,6 +481,13 @@ class Settings(BaseSettings):
                 problems.append("ANTHROPIC_API_KEY must be set when LLM_PROVIDER=anthropic.")
             if self.EVALS_PROVIDER == "ragas" and not self.ANTHROPIC_API_KEY:
                 problems.append("ANTHROPIC_API_KEY must be set when EVALS_PROVIDER=ragas.")
+            if self.EMAIL_PROVIDER == "smtp" and not self.SMTP_HOST:
+                problems.append("SMTP_HOST must be set when EMAIL_PROVIDER=smtp.")
+            if self.ENABLE_BILLING and self.BILLING_PROVIDER == "stripe":
+                if not self.STRIPE_API_KEY:
+                    problems.append("STRIPE_API_KEY must be set when ENABLE_BILLING and BILLING_PROVIDER=stripe.")  # noqa: E501
+                if not self.STRIPE_WEBHOOK_SECRET:
+                    problems.append("STRIPE_WEBHOOK_SECRET must be set when ENABLE_BILLING and BILLING_PROVIDER=stripe.")  # noqa: E501
             if problems:
                 raise ValueError(
                     f"Insecure configuration for ENVIRONMENT={self.ENVIRONMENT}: "

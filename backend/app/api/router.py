@@ -48,3 +48,8 @@ if settings.ENABLE_CONNECTORS:
     from app.api.v1 import connectors
 
     api_router.include_router(connectors.router)
+# Phase D: billing (plans, usage, checkout, Stripe webhook). Off by default.
+if settings.ENABLE_BILLING:
+    from app.api.v1 import billing
+
+    api_router.include_router(billing.router)

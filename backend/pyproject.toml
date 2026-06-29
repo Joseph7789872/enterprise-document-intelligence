@@ -31,6 +31,9 @@ dependencies = [
     # Phase 3: multi-agent workflow + LLM
     "langgraph>=0.2",
     "anthropic>=0.40",
+    # Phase D: outbound transactional email (invites + password reset). Pure-Python,
+    # works against any SMTP relay (SES/Mailgun/Postmark/self-hosted).
+    "aiosmtplib>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +55,10 @@ mcp = ["mcp>=1.2"]
 # embedding server. Without it, EMBEDDING_PROVIDER=sentence_transformers falls back to
 # fake in development (the prod validator refuses the silent downgrade outside it).
 local = ["sentence-transformers>=3.0"]
+# Phase D: Stripe billing. Opt-in: `uv sync --extra billing`. The SDK is lazy-imported
+# only inside StripeBillingProvider, so the default install + offline test suite use the
+# FakeBillingProvider and never need Stripe or its keys.
+billing = ["stripe>=9.0"]
 
 [dependency-groups]
 dev = [
@@ -114,6 +121,8 @@ module = [
     "langchain.*",
     "langfuse.*",
     "mcp.*",
+    "aiosmtplib.*",
+    "stripe.*",
 ]
 ignore_missing_imports = true
 

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, Enum, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
 from app.db.mixins import SoftDeleteMixin, TenantMixin, TimestampMixin
 from app.db.types import GUID
 
@@ -27,6 +26,12 @@ class UserRole(str, enum.Enum):
     OWNER = "owner"
     ADMIN = "admin"
     MEMBER = "member"
+
+
+# Imported after UserRole is defined: app.db.base eagerly imports every model (incl. ones
+# that reference UserRole, e.g. invitation), so UserRole must exist before that runs to
+# avoid a partial-module circular import.
+from app.db.base import Base  # noqa: E402
 
 
 class User(Base, TimestampMixin, SoftDeleteMixin, TenantMixin):

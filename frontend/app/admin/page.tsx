@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  type BillingOverview,
   type ContentType,
   type CurrentUser,
   type DocumentInfo,
+  type Invitation,
   type NotionStatus,
   type RampTopic,
   type Role,
@@ -16,26 +18,29 @@ import {
   type Visibility,
   applyTemplate,
   clearToken,
+  createInvitation,
   createObjection,
   createRampTopic,
   createSegment,
-  createUser,
   deactivateUser,
   deleteDocument,
   deleteObjection,
   deleteRampTopic,
   deleteSegment,
+  getBilling,
   getMe,
   getNotionStatus,
   getToken,
   importUrl,
   isManager,
   listDocuments,
+  listInvitations,
   listObjections,
   listRampTopics,
   listSegments,
   listTemplates,
   listUsers,
+  revokeInvitation,
   setNotionToken,
   syncNotion,
   uploadDocument,
@@ -94,12 +99,15 @@ export default function AdminPage() {
   const [notionMsg, setNotionMsg] = useState<string | null>(null);
   const [notionBusy, setNotionBusy] = useState(false);
 
-  // Reps
+  // Reps + invitations
   const [users, setUsers] = useState<CurrentUser[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [repEmail, setRepEmail] = useState("");
-  const [repPassword, setRepPassword] = useState("");
   const [repRole, setRepRole] = useState<Role>("member");
   const [repMsg, setRepMsg] = useState<string | null>(null);
+
+  // Plan & usage (billing may be disabled → 404, handled best-effort)
+  const [billing, setBilling] = useState<BillingOverview | null>(null);
 
   // Ramp topics
   const [topics, setTopics] = useState<RampTopic[]>([]);
@@ -123,12 +131,15 @@ export default function AdminPage() {
     await Promise.all([
       refreshDocs(),
       listUsers().then(setUsers).catch(() => {}),
+      listInvitations().then(setInvitations).catch(() => {}),
       listRampTopics().then(setTopics).catch(() => {}),
       listObjections().then(setObjections).catch(() => {}),
       listSegments().then(setSegments).catch(() => {}),
       listTemplates().then(setTemplates).catch(() => {}),
       // Notion status is best-effort; connectors may be disabled (404).
       getNotionStatus().then(setNotion).catch(() => setNotion(null)),
+      // Plan & usage is best-effort; billing may be disabled (404).
+      getBilling().then(setBilling).catch(() => setBilling(null)),
     ]);
   }, [refreshDocs]);
 
@@ -308,15 +319,19 @@ export default function AdminPage() {
     e.preventDefault();
     setRepMsg(null);
     try {
-      await createUser(repEmail.trim(), repPassword, repRole);
+      await createInvitation(repEmail.trim(), repRole);
       setRepEmail("");
-      setRepPassword("");
       setRepRole("member");
-      setRepMsg("Rep invited.");
-      setUsers(await listUsers());
+      setRepMsg("Invitation emailed.");
+      setInvitations(await listInvitations());
     } catch (err) {
-      setRepMsg(err instanceof Error ? err.message : "Could not invite rep");
+      setRepMsg(err instanceof Error ? err.message : "Could not send invitation");
     }
+  }
+
+  async function onRevokeInvite(id: string) {
+    await revokeInvitation(id);
+    setInvitations(await listInvitations());
   }
 
   async function onDeactivate(id: string) {
@@ -619,9 +634,42 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Reps */}
+      {/* Plan & usage */}
+      {billing && (
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>Plan &amp; usage</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            <strong>{billing.plan.name}</strong> ({billing.plan.price_display}) ·{" "}
+            <span className="badge">{billing.subscription.status}</span>
+          </p>
+          <ul style={{ margin: "8px 0", paddingLeft: 18, fontSize: "0.9rem" }}>
+            <li>
+              Seats: {billing.usage.users}
+              {billing.plan.limits.seats != null ? ` / ${billing.plan.limits.seats}` : " (unlimited)"}
+            </li>
+            <li>
+              Documents: {billing.usage.documents}
+              {billing.plan.limits.documents != null
+                ? ` / ${billing.plan.limits.documents}`
+                : " (unlimited)"}
+            </li>
+            <li>
+              Queries this month: {billing.usage.queries_this_period}
+              {billing.plan.limits.queries_per_month != null
+                ? ` / ${billing.plan.limits.queries_per_month}`
+                : " (unlimited)"}
+            </li>
+          </ul>
+          <Link href="/billing">Manage plan &amp; billing →</Link>
+        </div>
+      )}
+
+      {/* Reps + invitations */}
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Reps</h2>
+        <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+          Invite a teammate by email. They’ll get a link to set their own password.
+        </p>
         <form onSubmit={onInvite}>
           <label htmlFor="email">Email</label>
           <input
@@ -630,15 +678,6 @@ export default function AdminPage() {
             value={repEmail}
             onChange={(e) => setRepEmail(e.target.value)}
             placeholder="ae@yourco.com"
-            required
-          />
-          <label htmlFor="pw">Temporary password (min 12 chars)</label>
-          <input
-            id="pw"
-            type="text"
-            value={repPassword}
-            onChange={(e) => setRepPassword(e.target.value)}
-            minLength={12}
             required
           />
           <label htmlFor="role">Role</label>
@@ -651,11 +690,37 @@ export default function AdminPage() {
             <option value="member">AE (rep)</option>
             <option value="admin">Manager</option>
           </select>
-          <button type="submit" disabled={!repEmail.trim() || repPassword.length < 12}>
-            Invite rep
+          <button type="submit" disabled={!repEmail.trim()}>
+            Send invitation
           </button>
           {repMsg && <p className="muted" style={{ marginTop: 12 }}>{repMsg}</p>}
         </form>
+
+        {invitations.length > 0 && (
+          <>
+            <h3 style={{ fontSize: "0.95rem", marginBottom: 4 }}>Pending invitations</h3>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <tbody>
+                {invitations.map((inv) => (
+                  <tr key={inv.id} style={{ borderTop: "1px solid var(--border)", fontSize: "0.9rem" }}>
+                    <td style={{ padding: "6px 0" }}>{inv.email}</td>
+                    <td>
+                      <span className="badge">{isManager(inv.role) ? "manager" : "AE"}</span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        onClick={() => onRevokeInvite(inv.id)}
+                        style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.8rem" }}
+                      >
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
 
         {users.length > 0 && (
           <table style={{ width: "100%", marginTop: 16, borderCollapse: "collapse" }}>
