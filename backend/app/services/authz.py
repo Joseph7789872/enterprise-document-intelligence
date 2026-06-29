@@ -22,6 +22,7 @@ from app.errors import AuthorizationError
 from app.models.audit_log import AuditAction
 from app.models.document import ContentVisibility, Document
 from app.models.document_access_control import DocumentAccessControl, PrincipalType
+from app.models.document_segment import DocumentSegment
 from app.models.group_membership import GroupMembership
 from app.models.user import UserRole
 from app.services import audit_service
@@ -124,6 +125,25 @@ async def accessible_document_ids(
         if _grant_matches(acl, user_id=user_id, group_ids=group_ids, permission=permission):
             allowed.add(acl.document_id)
     return allowed
+
+
+async def segment_document_ids(
+    db: AsyncSession, *, tenant_id: uuid.UUID, segment_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Ids of documents tagged with ``segment_id`` (tenant-scoped).
+
+    Intersect this with ``accessible_document_ids`` to scope retrieval to one segment
+    *without* widening access — segment membership filters, the ACL still gates. Note the
+    ``None`` (unrestricted) sentinel must be handled by the caller: ``None & set`` raises,
+    so use ``seg if allowed is None else (allowed & seg)``.
+    """
+    rows = await db.scalars(
+        select(DocumentSegment.document_id).where(
+            DocumentSegment.tenant_id == tenant_id,
+            DocumentSegment.segment_id == segment_id,
+        )
+    )
+    return set(rows.all())
 
 
 async def can_access_document(

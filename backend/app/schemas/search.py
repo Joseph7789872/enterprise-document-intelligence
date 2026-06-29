@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=5, ge=1, le=20)
+    # Optional ICP/segment scope: restrict retrieval to documents tagged with this
+    # segment, intersected with the caller's ACL (never widens access).
+    segment_id: uuid.UUID | None = None
 
 
 class SearchResult(BaseModel):

@@ -10,21 +10,25 @@ import {
   type RampTopic,
   type Role,
   type SavedObjection,
+  type Segment,
   type Visibility,
   clearToken,
   createObjection,
   createRampTopic,
+  createSegment,
   createUser,
   deactivateUser,
   deleteDocument,
   deleteObjection,
   deleteRampTopic,
+  deleteSegment,
   getMe,
   getToken,
   isManager,
   listDocuments,
   listObjections,
   listRampTopics,
+  listSegments,
   listUsers,
   uploadDocument,
 } from "@/lib/api";
@@ -57,8 +61,14 @@ export default function AdminPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [contentType, setContentType] = useState<ContentType>("product");
   const [visibility, setVisibility] = useState<Visibility>("rep_visible");
+  const [uploadSegments, setUploadSegments] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+
+  // Segments (ICP)
+  const [segments, setSegments] = useState<Segment[]>([]);
+  const [segName, setSegName] = useState("");
+  const [objSegments, setObjSegments] = useState<string[]>([]);
 
   // Reps
   const [users, setUsers] = useState<CurrentUser[]>([]);
@@ -91,6 +101,7 @@ export default function AdminPage() {
       listUsers().then(setUsers).catch(() => {}),
       listRampTopics().then(setTopics).catch(() => {}),
       listObjections().then(setObjections).catch(() => {}),
+      listSegments().then(setSegments).catch(() => {}),
     ]);
   }, [refreshDocs]);
 
@@ -142,15 +153,35 @@ export default function AdminPage() {
     setUploadMsg(null);
     setUploading(true);
     try {
-      const doc = await uploadDocument(file, contentType, visibility);
+      const doc = await uploadDocument(file, contentType, visibility, uploadSegments);
       setUploadMsg(`Uploaded "${doc.filename}" — processing…`);
       if (fileRef.current) fileRef.current.value = "";
+      setUploadSegments([]);
       await refreshDocs();
     } catch (err) {
       setUploadMsg(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
+  }
+
+  async function onAddSegment(e: React.FormEvent) {
+    e.preventDefault();
+    await createSegment(segName.trim(), segments.length);
+    setSegName("");
+    setSegments(await listSegments());
+  }
+
+  async function onRemoveSegment(id: string) {
+    await deleteSegment(id);
+    setSegments(await listSegments());
+    // Drop the removed segment from any pending selections.
+    setUploadSegments((s) => s.filter((x) => x !== id));
+    setObjSegments((s) => s.filter((x) => x !== id));
+  }
+
+  function toggle(list: string[], id: string): string[] {
+    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
   }
 
   async function onRemoveDoc(id: string) {
@@ -193,11 +224,14 @@ export default function AdminPage() {
 
   async function onAddObjection(e: React.FormEvent) {
     e.preventDefault();
-    await createObjection(objLabel.trim(), objPrompt.trim(), objections.length);
+    await createObjection(objLabel.trim(), objPrompt.trim(), objections.length, objSegments);
     setObjLabel("");
     setObjPrompt("");
+    setObjSegments([]);
     setObjections(await listObjections());
   }
+
+  const segName_ = (id: string) => segments.find((s) => s.id === id)?.name ?? "";
 
   async function onRemoveObjection(id: string) {
     await deleteObjection(id);
@@ -254,6 +288,24 @@ export default function AdminPage() {
             <option value="rep_visible">rep-visible</option>
             <option value="manager_only">manager-only</option>
           </select>
+          {segments.length > 0 && (
+            <>
+              <label>Segments (optional)</label>
+              <div className="chips" style={{ marginBottom: 12 }}>
+                {segments.map((s) => (
+                  <label key={s.id} className="chip" style={{ cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={uploadSegments.includes(s.id)}
+                      onChange={() => setUploadSegments((cur) => toggle(cur, s.id))}
+                      style={{ marginRight: 6 }}
+                    />
+                    {s.name}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
           <button type="submit" disabled={uploading}>
             {uploading ? "Uploading…" : "Upload"}
           </button>
@@ -292,6 +344,50 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+
+      {/* Segments (ICP) */}
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Segments (ICP)</h2>
+        <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+          Define your market segments (e.g. Enterprise, SMB, Healthcare). Tag content and
+          objections with segments so reps can filter &quot;objections for [segment]&quot;.
+        </p>
+        <form onSubmit={onAddSegment}>
+          <label htmlFor="sn">Segment name</label>
+          <input
+            id="sn"
+            value={segName}
+            onChange={(e) => setSegName(e.target.value)}
+            placeholder="Enterprise"
+            required
+          />
+          <button type="submit" disabled={!segName.trim()}>
+            Add segment
+          </button>
+        </form>
+        {segments.length > 0 && (
+          <div className="chips" style={{ marginTop: 12 }}>
+            {segments.map((s) => (
+              <span key={s.id} className="chip">
+                {s.name}
+                <button
+                  onClick={() => onRemoveSegment(s.id)}
+                  aria-label={`Delete ${s.name}`}
+                  style={{
+                    marginTop: 0,
+                    marginLeft: 8,
+                    padding: "0 6px",
+                    fontSize: "0.8rem",
+                    background: "transparent",
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
         )}
       </div>
 
@@ -436,6 +532,24 @@ export default function AdminPage() {
             placeholder="How do I handle 'your product is too expensive'?"
             required
           />
+          {segments.length > 0 && (
+            <>
+              <label>Segments (optional)</label>
+              <div className="chips" style={{ marginBottom: 12 }}>
+                {segments.map((s) => (
+                  <label key={s.id} className="chip" style={{ cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={objSegments.includes(s.id)}
+                      onChange={() => setObjSegments((cur) => toggle(cur, s.id))}
+                      style={{ marginRight: 6 }}
+                    />
+                    {s.name}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
           <button type="submit" disabled={!objLabel.trim() || !objPrompt.trim()}>
             Add objection
           </button>
@@ -454,6 +568,12 @@ export default function AdminPage() {
           >
             <span>
               <strong>{o.label}</strong> <span className="muted">— {o.prompt}</span>
+              {o.segment_ids.length > 0 && (
+                <span className="muted">
+                  {" "}
+                  [{o.segment_ids.map(segName_).filter(Boolean).join(", ")}]
+                </span>
+              )}
             </span>
             <button
               onClick={() => onRemoveObjection(o.id)}

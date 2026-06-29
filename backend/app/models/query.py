@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 import uuid
 
-from sqlalchemy import Enum, Float, ForeignKey, Index, Integer, Text
+from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,12 +30,22 @@ class QueryStatus(str, enum.Enum):
 
 class Query(Base, TimestampMixin, TenantMixin):
     __tablename__ = "queries"
-    __table_args__ = (Index("ix_queries_tenant_id_status", "tenant_id", "status"),)
+    __table_args__ = (
+        Index("ix_queries_tenant_id_status", "tenant_id", "status"),
+        Index("ix_queries_conversation_id", "conversation_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         GUID(), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
+    # The chat thread this turn belongs to. Nullable so one-shot asks (and pre-Phase-B
+    # rows) need no thread; CASCADE so deleting a conversation removes its turns.
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True
+    )
+    # User-bookmarked answer (the History "Saved" filter).
+    saved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     question_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     answer_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)

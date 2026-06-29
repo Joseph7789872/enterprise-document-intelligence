@@ -77,12 +77,16 @@ export interface AnswerResponse {
   answer: string | null;
   citations: Citation[];
   confidence: number | null;
+  conversation_id: string | null;
 }
 
-export async function ask(question: string): Promise<AnswerResponse> {
+export async function ask(
+  question: string,
+  conversationId?: string | null,
+): Promise<AnswerResponse> {
   return request<AnswerResponse>("/query", {
     method: "POST",
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, conversation_id: conversationId ?? null }),
   });
 }
 
@@ -90,12 +94,13 @@ export interface StreamDone {
   query_id: string;
   citations: Citation[];
   confidence: number | null;
+  conversation_id: string | null;
 }
 
 export interface StreamHandlers {
   onToken: (text: string) => void;
   onDone: (data: StreamDone) => void;
-  onPending?: (data: { query_id: string; status: string }) => void;
+  onPending?: (data: { query_id: string; status: string; conversation_id: string | null }) => void;
   onError?: (detail: string) => void;
 }
 
@@ -118,7 +123,11 @@ function parseSseEvent(raw: string): { event: string; data: unknown } | null {
 // answer arrives via onToken; citations + confidence arrive via onDone. Low-confidence
 // answers (human-review off, the v1 default) still stream — the caller surfaces the
 // confidence as an honest "not fully sure" banner.
-export async function streamAnswer(question: string, h: StreamHandlers): Promise<void> {
+export async function streamAnswer(
+  question: string,
+  h: StreamHandlers,
+  conversationId?: string | null,
+): Promise<void> {
   const token = getToken();
   const res = await fetch(`${API_URL}/query/stream`, {
     method: "POST",
@@ -126,7 +135,7 @@ export async function streamAnswer(question: string, h: StreamHandlers): Promise
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, conversation_id: conversationId ?? null }),
   });
   if (!res.ok || !res.body) {
     throw new Error(`Stream failed (${res.status})`);
@@ -147,7 +156,8 @@ export async function streamAnswer(question: string, h: StreamHandlers): Promise
       if (!ev) continue;
       if (ev.event === "token") h.onToken((ev.data as { text: string }).text);
       else if (ev.event === "done") h.onDone(ev.data as StreamDone);
-      else if (ev.event === "pending") h.onPending?.(ev.data as { query_id: string; status: string });
+      else if (ev.event === "pending")
+        h.onPending?.(ev.data as { query_id: string; status: string; conversation_id: string | null });
       else if (ev.event === "error") h.onError?.((ev.data as { detail: string }).detail);
     }
   }
@@ -158,10 +168,34 @@ export interface SavedObjection {
   label: string;
   prompt: string;
   sort_order: number;
+  segment_ids: string[];
 }
 
-export async function listObjections(): Promise<SavedObjection[]> {
-  return request<SavedObjection[]>("/objections");
+export async function listObjections(segmentId?: string | null): Promise<SavedObjection[]> {
+  const q = segmentId ? `?segment_id=${encodeURIComponent(segmentId)}` : "";
+  return request<SavedObjection[]>(`/objections${q}`);
+}
+
+// ── ICP / segments ──────────────────────────────────────────────────────────────────
+export interface Segment {
+  id: string;
+  name: string;
+  sort_order: number;
+}
+
+export async function listSegments(): Promise<Segment[]> {
+  return request<Segment[]>("/segments");
+}
+
+export async function createSegment(name: string, sortOrder = 0): Promise<Segment> {
+  return request<Segment>("/segments", {
+    method: "POST",
+    body: JSON.stringify({ name, sort_order: sortOrder }),
+  });
+}
+
+export async function deleteSegment(id: string): Promise<void> {
+  await request<void>(`/segments/${id}`, { method: "DELETE" });
 }
 
 export interface RampTopic {
@@ -238,10 +272,16 @@ export async function createObjection(
   label: string,
   prompt: string,
   sortOrder = 0,
+  segmentIds?: string[],
 ): Promise<SavedObjection> {
   return request<SavedObjection>("/objections", {
     method: "POST",
-    body: JSON.stringify({ label, prompt, sort_order: sortOrder }),
+    body: JSON.stringify({
+      label,
+      prompt,
+      sort_order: sortOrder,
+      segment_ids: segmentIds ?? null,
+    }),
   });
 }
 
@@ -261,10 +301,44 @@ export interface QueryLogItem {
   citations: Citation[];
   confidence: number | null;
   created_at: string;
+  conversation_id: string | null;
+  saved: boolean;
 }
 
-export async function listQueries(): Promise<QueryLogItem[]> {
-  return request<QueryLogItem[]>("/query");
+export async function listQueries(savedOnly = false): Promise<QueryLogItem[]> {
+  const q = savedOnly ? "?saved_only=true" : "";
+  return request<QueryLogItem[]>(`/query${q}`);
+}
+
+export async function setQuerySaved(id: string, saved: boolean): Promise<QueryLogItem> {
+  return request<QueryLogItem>(`/query/${id}/save?saved=${saved}`, { method: "POST" });
+}
+
+// ── Conversations (chat threads) ──────────────────────────────────────────────────────
+export interface ConversationInfo {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationDetail extends ConversationInfo {
+  turns: QueryLogItem[];
+}
+
+export async function createConversation(title?: string | null): Promise<ConversationInfo> {
+  return request<ConversationInfo>("/conversations", {
+    method: "POST",
+    body: JSON.stringify({ title: title ?? null }),
+  });
+}
+
+export async function listConversations(): Promise<ConversationInfo[]> {
+  return request<ConversationInfo[]>("/conversations");
+}
+
+export async function getConversation(id: string): Promise<ConversationDetail> {
+  return request<ConversationDetail>(`/conversations/${id}`);
 }
 
 export type ContentType =
@@ -284,16 +358,28 @@ export interface DocumentInfo {
   content_type: ContentType;
   visibility: Visibility;
   error_message: string | null;
+  segment_ids: string[];
 }
 
 export async function listDocuments(): Promise<DocumentInfo[]> {
   return request<DocumentInfo[]>("/documents");
 }
 
+export async function setDocumentSegments(
+  id: string,
+  segmentIds: string[],
+): Promise<DocumentInfo> {
+  return request<DocumentInfo>(`/documents/${id}/segments`, {
+    method: "PUT",
+    body: JSON.stringify({ segment_ids: segmentIds }),
+  });
+}
+
 export async function uploadDocument(
   file: File,
   contentType: ContentType = "product",
   visibility: Visibility = "rep_visible",
+  segmentIds: string[] = [],
 ): Promise<DocumentInfo> {
   // Multipart upload — let the browser set the Content-Type boundary (so we don't reuse
   // the JSON `request` helper here).
@@ -301,6 +387,7 @@ export async function uploadDocument(
   form.append("file", file);
   form.append("content_type", contentType);
   form.append("visibility", visibility);
+  for (const sid of segmentIds) form.append("segment_ids", sid);
   const token = getToken();
   const res = await fetch(`${API_URL}/documents`, {
     method: "POST",

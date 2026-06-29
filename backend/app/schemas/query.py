@@ -18,6 +18,9 @@ class QueryRequest(BaseModel):
     )
 
     question: str = Field(min_length=1, max_length=4000)
+    # Optional chat thread. When set, prior turns inform follow-up reference resolution
+    # and this turn is persisted into the thread. Omit/null for a one-shot ask.
+    conversation_id: uuid.UUID | None = None
 
 
 class CitationOut(BaseModel):
@@ -58,6 +61,7 @@ class AnswerResponse(BaseModel):
     answer: str | None
     citations: list[CitationOut]
     confidence: float | None
+    conversation_id: uuid.UUID | None = None
 
 
 class QueryRead(BaseModel):
@@ -68,3 +72,5 @@ class QueryRead(BaseModel):
     citations: list[CitationOut]
     confidence: float | None
     created_at: datetime
+    conversation_id: uuid.UUID | None = None
+    saved: bool = False

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { type QueryLogItem, getToken, listQueries } from "@/lib/api";
+import { type QueryLogItem, getToken, listQueries, setQuerySaved } from "@/lib/api";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -16,18 +16,19 @@ export default function QaLogPage() {
   const [items, setItems] = useState<QueryLogItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savedOnly, setSavedOnly] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setItems(await listQueries());
+      setItems(await listQueries(savedOnly));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load the Q&A log");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [savedOnly]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -37,6 +38,20 @@ export default function QaLogPage() {
     setReady(true);
     load();
   }, [router, load]);
+
+  async function toggleSaved(q: QueryLogItem) {
+    try {
+      await setQuerySaved(q.id, !q.saved);
+      // Reflect locally; drop from the list if we're in the Saved-only view.
+      setItems((prev) =>
+        savedOnly && q.saved
+          ? prev.filter((x) => x.id !== q.id)
+          : prev.map((x) => (x.id === q.id ? { ...x, saved: !x.saved } : x)),
+      );
+    } catch {
+      /* ignore toggle failure */
+    }
+  }
 
   if (!ready) return null;
 
@@ -49,6 +64,15 @@ export default function QaLogPage() {
         </Link>
       </div>
       <p className="muted">Every question you&apos;ve asked, with its answer, sources, and confidence.</p>
+
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        <button className={`tab${savedOnly ? "" : " active"}`} onClick={() => setSavedOnly(false)}>
+          All
+        </button>
+        <button className={`tab${savedOnly ? " active" : ""}`} onClick={() => setSavedOnly(true)}>
+          Saved
+        </button>
+      </div>
 
       {loading && <p className="muted">Loading…</p>}
       {error && <p className="error">{error}</p>}
@@ -66,8 +90,18 @@ export default function QaLogPage() {
             style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}
           >
             <strong>{q.question}</strong>
-            <span className="muted" style={{ fontSize: "0.75rem", whiteSpace: "nowrap" }}>
-              {formatDate(q.created_at)}
+            <span style={{ display: "flex", gap: 10, alignItems: "baseline", whiteSpace: "nowrap" }}>
+              <button
+                onClick={() => toggleSaved(q)}
+                title={q.saved ? "Remove from Saved" : "Save this answer"}
+                aria-label={q.saved ? "Unsave" : "Save"}
+                style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.8rem" }}
+              >
+                {q.saved ? "★ Saved" : "☆ Save"}
+              </button>
+              <span className="muted" style={{ fontSize: "0.75rem" }}>
+                {formatDate(q.created_at)}
+              </span>
             </span>
           </div>
 

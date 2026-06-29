@@ -28,6 +28,8 @@ class DocumentRead(BaseModel):
     chunk_count: int
     created_at: datetime
     updated_at: datetime
+    # ICP/segment tags (Phase B); empty when untagged. Populated by the router.
+    segment_ids: list[uuid.UUID] = []
 
 
 class UploadResponse(BaseModel):

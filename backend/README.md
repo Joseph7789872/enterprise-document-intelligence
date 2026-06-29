@@ -219,10 +219,27 @@ docker compose up -d         # postgres (pgvector) + redis
 
 ```bash
 cd backend
-uv run alembic upgrade head                       # create the five security tables
+uv run alembic upgrade head                       # create the schema
 uv run uvicorn app.main:app --reload              # http://localhost:8000
 # OpenAPI docs at http://localhost:8000/docs
 ```
+
+> **Windows: `--reload` can crash or hang** (the `watchfiles` notifier conflicts with
+> OneDrive-synced paths). Scope the watch to the source tree, or drop `--reload`:
+>
+> ```bash
+> uv run uvicorn app.main:app --reload --reload-dir app   # narrower watch, usually stable
+> uv run uvicorn app.main:app                             # no autoreload (always works)
+> ```
+
+> **No Docker? Run on SQLite.** The app and migrations run on a local SQLite file with no
+> Postgres/Redis — fine for a quick spin (hybrid retrieval uses Python fallbacks; not for
+> production). Point `DATABASE_URL` at a file before migrating/serving:
+>
+> ```bash
+> export DATABASE_URL=sqlite+aiosqlite:///./var/dev.db   # PowerShell: $env:DATABASE_URL="sqlite+aiosqlite:///./var/dev.db"
+> uv run alembic upgrade head
+> ```
 
 ## Quick end-to-end check
 

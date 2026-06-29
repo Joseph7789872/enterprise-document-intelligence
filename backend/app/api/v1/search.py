@@ -38,6 +38,13 @@ async def search(
         role=current.role,
         permission=Permission.QUERY,
     )
+    # Optional ICP/segment scope, intersected with the ACL set. The None sentinel
+    # (unrestricted) must be special-cased — `None & set` would raise.
+    if body.segment_id is not None:
+        seg_ids = await authz.segment_document_ids(
+            db, tenant_id=current.tenant_id, segment_id=body.segment_id
+        )
+        allowed = seg_ids if allowed is None else (allowed & seg_ids)
     query_embedding = await get_embedder().embed_query(body.query)
     scored = await retrieval.hybrid_search(
         db,

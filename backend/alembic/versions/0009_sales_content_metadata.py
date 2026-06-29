@@ -46,7 +46,11 @@ def upgrade() -> None:
     )
 
     # Drop the legal taxonomy. matter_id carries a named FK + index (added in 0006).
-    op.drop_constraint("fk_documents_matter_id_groups", "documents", type_="foreignkey")
+    # The FK only exists on PostgreSQL (0006 creates it under the same guard; SQLite
+    # can't ALTER-drop a constraint), so only drop it there.
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.drop_constraint("fk_documents_matter_id_groups", "documents", type_="foreignkey")
     op.drop_index("ix_documents_matter_id", table_name="documents")
     op.drop_column("documents", "matter_id")
     op.drop_column("documents", "department")
@@ -69,10 +73,14 @@ def downgrade() -> None:
     op.add_column("documents", sa.Column("department", sa.String(length=255), nullable=True))
     op.add_column("documents", sa.Column("matter_id", GUID(), nullable=True))
     op.create_index("ix_documents_matter_id", "documents", ["matter_id"])
-    op.create_foreign_key(
-        "fk_documents_matter_id_groups", "documents", "groups",
-        ["matter_id"], ["id"], ondelete="SET NULL",
-    )
+    # Standalone ALTER ADD CONSTRAINT is unsupported on SQLite; only restore the FK on
+    # PostgreSQL (matching the 0006 guard that originally created it).
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.create_foreign_key(
+            "fk_documents_matter_id_groups", "documents", "groups",
+            ["matter_id"], ["id"], ondelete="SET NULL",
+        )
 
     op.drop_column("documents", "visibility")
     op.drop_column("documents", "content_type")

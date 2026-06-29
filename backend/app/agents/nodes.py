@@ -18,6 +18,7 @@ from app.agents.prompts import (
     PLANNER_SYSTEM,
     SYNTHESIZER_SYSTEM,
     VERIFIER_SYSTEM,
+    format_history,
     format_sources,
 )
 from app.agents.state import (
@@ -130,11 +131,14 @@ class WorkflowRunner:
                 tenant_settings=await self._resolve_tenant_settings(),
                 deployment_mode=self.deployment_mode,
             )
+            # Prepend prior turns (if any) so the planner can resolve follow-up
+            # references; empty for one-shot asks, leaving the prompt unchanged.
+            user_content = format_history(state.get("history", [])) + question
             try:
                 plan = await route.client.parse(
                     model=route.model,
                     system=PLANNER_SYSTEM,
-                    messages=[{"role": "user", "content": question}],
+                    messages=[{"role": "user", "content": user_content}],
                     schema=SubQueryPlan,
                     max_tokens=1024,
                 )

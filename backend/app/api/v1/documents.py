@@ -34,7 +34,8 @@ from app.models.group import Group
 from app.models.user import User, UserRole
 from app.schemas.acl import ACLGrantCreate, ACLGrantRead
 from app.schemas.document import DocumentRead, UploadResponse
-from app.services import audit_service, authz
+from app.schemas.segment import SegmentTagUpdate
+from app.services import audit_service, authz, segment_service
 from app.services.authz import Permission
 from app.services.ingestion import process_document
 from app.storage import StorageError, document_storage_key, get_storage
@@ -70,6 +71,7 @@ async def upload_document(
     file: UploadFile = File(...),
     content_type: SalesContentType = Form(SalesContentType.PRODUCT),
     visibility: ContentVisibility = Form(ContentVisibility.REP_VISIBLE),
+    segment_ids: list[uuid.UUID] = Form(default=[]),
     current: CurrentUser = Depends(require_role(UserRole.OWNER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> UploadResponse:
@@ -133,6 +135,12 @@ async def upload_document(
     db.add(document)
     await db.flush()
 
+    # Apply ICP/segment tags (validates each belongs to the tenant).
+    if segment_ids:
+        await segment_service.replace_document_segments(
+            db, tenant_id=current.tenant_id, document_id=document_id, segment_ids=segment_ids
+        )
+
     await audit_service.write_event(
         db,
         tenant_id=current.tenant_id,
@@ -181,6 +189,12 @@ async def list_documents(
         stmt = stmt.where(Document.id.in_(allowed))
     result = await db.scalars(stmt.limit(limit).offset(offset))
     documents = list(result.all())
+    # Attach segment tags (batch) so each DocumentRead carries its segment_ids.
+    tags = await segment_service.segments_for_documents(
+        db, tenant_id=current.tenant_id, document_ids=[d.id for d in documents]
+    )
+    for doc in documents:
+        doc.segment_ids = tags.get(doc.id, [])  # type: ignore[attr-defined]
     await audit_service.write_event(
         db,
         tenant_id=current.tenant_id,
@@ -219,6 +233,10 @@ async def get_document(
     ):
         raise NotFoundError("Document not found.")
 
+    tags = await segment_service.segments_for_documents(
+        db, tenant_id=current.tenant_id, document_ids=[document.id]
+    )
+    document.segment_ids = tags.get(document.id, [])  # type: ignore[attr-defined]
     await audit_service.write_event(
         db,
         tenant_id=current.tenant_id,
@@ -227,6 +245,40 @@ async def get_document(
         resource_type="document",
         resource_id=str(document.id),
         ip_address=client_ip(request),
+    )
+    return document
+
+
+@router.put("/{document_id}/segments", response_model=DocumentRead)
+async def set_document_segments(
+    document_id: uuid.UUID,
+    body: SegmentTagUpdate,
+    request: Request,
+    current: CurrentUser = Depends(require_role(UserRole.OWNER, UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_db),
+) -> Document:
+    """Replace the full set of segments tagged on a document (manager-only)."""
+    document = await db.get(Document, document_id)
+    if (
+        document is None
+        or document.tenant_id != current.tenant_id
+        or document.deleted_at is not None
+    ):
+        raise NotFoundError("Document not found.")
+    applied = await segment_service.replace_document_segments(
+        db, tenant_id=current.tenant_id, document_id=document.id, segment_ids=body.segment_ids
+    )
+    document.segment_ids = applied  # type: ignore[attr-defined]
+    await audit_service.write_event(
+        db,
+        tenant_id=current.tenant_id,
+        action=AuditAction.DOCUMENT_SEGMENTS_UPDATED,
+        actor_user_id=current.id,
+        resource_type="document",
+        resource_id=str(document.id),
+        metadata={"segment_ids": [str(s) for s in applied]},
+        ip_address=client_ip(request),
+        outcome="allow",
     )
     return document
 

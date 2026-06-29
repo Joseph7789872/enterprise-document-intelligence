@@ -9,6 +9,7 @@ from app.api.v1 import (
     audit,
     auth,
     compliance,
+    conversations,
     documents,
     evals,
     health,
@@ -16,6 +17,7 @@ from app.api.v1 import (
     query,
     ramp,
     search,
+    segments,
 )
 from app.core.config import settings
 
@@ -26,10 +28,14 @@ api_router.include_router(audit.router)
 api_router.include_router(documents.router)
 api_router.include_router(search.router)
 api_router.include_router(query.router)
+# Phase B: conversational chat threads (per-user).
+api_router.include_router(conversations.router)
 api_router.include_router(admin.router)
 # V1 sales: manager-curated ramp checklist + objection library (AE-readable).
 api_router.include_router(ramp.router)
 api_router.include_router(objections.router)
+# Phase B: ICP / segments (AE-readable list, manager CRUD).
+api_router.include_router(segments.router)
 
 # Enterprise-only surfaces — mounted only when their v1 feature flag is on (off in the
 # production sales product; on in dev/test so the suite still covers them).

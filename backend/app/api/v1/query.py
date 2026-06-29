@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -20,6 +21,7 @@ from app.core.deps import CurrentUser, client_ip, get_current_user, get_db, requ
 from app.core.logging import get_trace_id
 from app.errors import LLMRoutingError, NotFoundError
 from app.models.audit_log import AuditAction
+from app.models.conversation import Conversation
 from app.models.query import Query, QueryStatus
 from app.models.user import UserRole
 from app.observability.tracing import start_trace
@@ -27,6 +29,9 @@ from app.schemas.query import AnswerResponse, CitationOut, QueryRead, QueryReque
 from app.services import audit_service
 
 router = APIRouter(prefix="/query", tags=["query"])
+
+# How many prior turns of a thread to feed the planner for follow-up reference resolution.
+_HISTORY_TURNS = 6
 
 
 def _runner(db: AsyncSession, current: CurrentUser) -> WorkflowRunner:
@@ -65,18 +70,63 @@ def _confidence(state: AgentState) -> float | None:
     return ver.confidence if ver is not None else None
 
 
+async def _validate_conversation(
+    db: AsyncSession, current: CurrentUser, conversation_id: uuid.UUID
+) -> Conversation:
+    """Ensure a supplied thread belongs to the caller; 404 otherwise (no disclosure)."""
+    convo = await db.get(Conversation, conversation_id)
+    if convo is None or convo.tenant_id != current.tenant_id or convo.user_id != current.id:
+        raise NotFoundError("Conversation not found.")
+    return convo
+
+
+async def _load_history(
+    db: AsyncSession,
+    current: CurrentUser,
+    conversation_id: uuid.UUID | None,
+    *,
+    limit: int = _HISTORY_TURNS,
+) -> list[tuple[str, str]]:
+    """Prior answered turns of a thread as (question, answer) pairs, oldest→newest.
+
+    User- and tenant-scoped, so a thread can never surface another user's turns. Returns
+    [] for a one-shot ask (no conversation_id)."""
+    if conversation_id is None:
+        return []
+    rows = await db.scalars(
+        select(Query)
+        .where(
+            Query.tenant_id == current.tenant_id,
+            Query.user_id == current.id,
+            Query.conversation_id == conversation_id,
+            Query.answer_encrypted.is_not(None),
+        )
+        .order_by(Query.created_at.desc())
+        .limit(limit)
+    )
+    turns = [
+        (decrypt_str(q.question_encrypted), decrypt_str(q.answer_encrypted))
+        for q in rows.all()
+        if q.answer_encrypted is not None
+    ]
+    turns.reverse()  # back to oldest→newest for the prompt
+    return turns
+
+
 async def _persist(
     db: AsyncSession,
     current: CurrentUser,
     *,
     question: str,
     state: AgentState,
+    conversation_id: uuid.UUID | None = None,
 ) -> Query:
     status = state.get("status", QueryState.FAILED)
     answer = state.get("answer")
     query = Query(
         tenant_id=current.tenant_id,
         user_id=current.id,
+        conversation_id=conversation_id,
         question_encrypted=encrypt_str(question),
         answer_encrypted=encrypt_str(answer) if answer else None,
         citations=_citations_json(state),
@@ -86,6 +136,11 @@ async def _persist(
         trace_id=get_trace_id(),
     )
     db.add(query)
+    # Bump the thread's updated_at so most-recent-activity ordering is correct.
+    if conversation_id is not None:
+        convo = await db.get(Conversation, conversation_id)
+        if convo is not None:
+            convo.updated_at = datetime.now(UTC)
     await db.flush()
     return query
 
@@ -107,6 +162,10 @@ async def ask(
         ip_address=client_ip(request),
     )
 
+    if body.conversation_id is not None:
+        await _validate_conversation(db, current, body.conversation_id)
+    history = await _load_history(db, current, body.conversation_id)
+
     runner = _runner(db, current)
     graph = build_workflow(runner)
     initial: AgentState = {
@@ -115,6 +174,8 @@ async def ask(
         "user_id": current.id,
         "trace_id": get_trace_id(),
         "status": QueryState.PROCESSING,
+        "conversation_id": body.conversation_id,
+        "history": history,
     }
     try:
         with start_trace("query", tenant_id=current.tenant_id, user_id=current.id):
@@ -122,7 +183,9 @@ async def ask(
     except LLMRoutingError as exc:
         await _audit_route_denied(current, exc, ip=client_ip(request))
         raise
-    query = await _persist(db, current, question=body.question, state=state)
+    query = await _persist(
+        db, current, question=body.question, state=state, conversation_id=body.conversation_id
+    )
 
     requires_approval = bool(state.get("requires_approval"))
     action = AuditAction.QUERY_PENDING_APPROVAL if requires_approval else AuditAction.QUERY_ANSWERED
@@ -148,6 +211,7 @@ async def ask(
         answer=state.get("answer"),
         citations=[CitationOut(**c) for c in _citations_json(state)],
         confidence=_confidence(state),
+        conversation_id=query.conversation_id,
     )
 
 
@@ -174,11 +238,16 @@ async def ask_stream(
             resource_type="query",
             ip_address=client_ip(request),
         )
+        if body.conversation_id is not None:
+            await _validate_conversation(db, current, body.conversation_id)
+        history = await _load_history(db, current, body.conversation_id)
         state: AgentState = {
             "question": body.question,
             "tenant_id": current.tenant_id,
             "user_id": current.id,
             "trace_id": get_trace_id(),
+            "conversation_id": body.conversation_id,
+            "history": history,
         }
         try:
             with start_trace("query.stream", tenant_id=current.tenant_id, user_id=current.id):
@@ -188,7 +257,10 @@ async def ask_stream(
 
                 if route_after_verify(state) == "human_review":
                     state.update(await runner.human_review(state))
-                    query = await _persist(db, current, question=body.question, state=state)
+                    query = await _persist(
+                        db, current, question=body.question, state=state,
+                        conversation_id=body.conversation_id,
+                    )
                     await audit_service.write_event(
                         db,
                         tenant_id=current.tenant_id,
@@ -199,7 +271,14 @@ async def ask_stream(
                     )
                     await db.commit()
                     yield _sse(
-                        "pending", {"query_id": str(query.id), "status": query.status.value}
+                        "pending",
+                        {
+                            "query_id": str(query.id),
+                            "status": query.status.value,
+                            "conversation_id": str(query.conversation_id)
+                            if query.conversation_id
+                            else None,
+                        },
                     )
                     return
 
@@ -211,7 +290,10 @@ async def ask_stream(
                 state["answer"] = "".join(pieces)
                 state.update(await runner.source_attributor(state))
 
-                query = await _persist(db, current, question=body.question, state=state)
+                query = await _persist(
+                    db, current, question=body.question, state=state,
+                    conversation_id=body.conversation_id,
+                )
                 await audit_service.write_event(
                     db,
                     tenant_id=current.tenant_id,
@@ -228,6 +310,9 @@ async def ask_stream(
                         "query_id": str(query.id),
                         "citations": _citations_json(state),
                         "confidence": _confidence(state),
+                        "conversation_id": str(query.conversation_id)
+                        if query.conversation_id
+                        else None,
                     },
                 )
         except LLMRoutingError as exc:
@@ -250,6 +335,8 @@ def _to_query_read(query: Query) -> QueryRead:
         citations=[CitationOut(**c) for c in (query.citations or [])],
         confidence=query.confidence,
         created_at=query.created_at,
+        conversation_id=query.conversation_id,
+        saved=query.saved,
     )
 
 
@@ -259,18 +346,43 @@ async def list_queries(
     db: AsyncSession = Depends(get_db),
     limit: int = 50,
     offset: int = 0,
+    saved_only: bool = False,
 ) -> list[QueryRead]:
     """The caller's own past queries (newest first) — the Q&A log. Tenant- and
-    user-scoped; never exposes other users' or tenants' questions."""
+    user-scoped; never exposes other users' or tenants' questions. Pass
+    ``saved_only=true`` for the bookmarked-answers ("Saved") view."""
     limit = max(1, min(limit, 200))
-    rows = await db.scalars(
+    stmt = (
         select(Query)
         .where(Query.tenant_id == current.tenant_id, Query.user_id == current.id)
         .order_by(Query.created_at.desc())
         .limit(limit)
         .offset(max(0, offset))
     )
+    if saved_only:
+        stmt = stmt.where(Query.saved.is_(True))
+    rows = await db.scalars(stmt)
     return [_to_query_read(q) for q in rows.all()]
+
+
+@router.post("/{query_id}/save", response_model=QueryRead)
+async def set_query_saved(
+    query_id: uuid.UUID,
+    saved: bool = True,
+    current: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> QueryRead:
+    """Bookmark (or un-bookmark) one of the caller's own answers for the Saved view."""
+    query = await db.get(Query, query_id)
+    if (
+        query is None
+        or query.tenant_id != current.tenant_id
+        or query.user_id != current.id
+    ):
+        raise NotFoundError("Query not found.")
+    query.saved = saved
+    await db.flush()
+    return _to_query_read(query)
 
 
 @router.get("/{query_id}", response_model=QueryRead)

@@ -79,6 +79,11 @@ class AuditAction(str, enum.Enum):
     OBJECTION_CREATED = "objection.created"
     OBJECTION_UPDATED = "objection.updated"
     OBJECTION_DELETED = "objection.deleted"
+    # ICP / segments (Phase B)
+    SEGMENT_CREATED = "segment.created"
+    SEGMENT_UPDATED = "segment.updated"
+    SEGMENT_DELETED = "segment.deleted"
+    DOCUMENT_SEGMENTS_UPDATED = "document.segments_updated"
 
 
 class AuditLog(Base):

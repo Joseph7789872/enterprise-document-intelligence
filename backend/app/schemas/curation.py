@@ -36,12 +36,16 @@ class SavedObjectionCreate(BaseModel):
     label: str = Field(min_length=1, max_length=255)
     prompt: str = Field(min_length=1, max_length=1000)
     sort_order: int = 0
+    # ICP/segment tags (Phase B). None = leave untagged.
+    segment_ids: list[uuid.UUID] | None = None
 
 
 class SavedObjectionUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=255)
     prompt: str | None = Field(default=None, min_length=1, max_length=1000)
     sort_order: int | None = None
+    # None = leave tags unchanged; [] = clear all tags.
+    segment_ids: list[uuid.UUID] | None = None
 
 
 class SavedObjectionRead(BaseModel):
@@ -52,3 +56,5 @@ class SavedObjectionRead(BaseModel):
     prompt: str
     sort_order: int
     created_at: datetime
+    # Segments this objection is tagged with (Phase B); empty when untagged.
+    segment_ids: list[uuid.UUID] = []

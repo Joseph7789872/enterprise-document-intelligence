@@ -72,6 +72,11 @@ class AgentState(TypedDict, total=False):
     user_id: uuid.UUID
     trace_id: str | None
     question: str
+    # Conversational context (Phase B). ``history`` holds prior (question, answer) turns
+    # oldest→newest — decrypted, in-memory only — used by the planner to resolve
+    # references in a follow-up. Retrieval still re-runs fresh each turn under ACL.
+    conversation_id: uuid.UUID | None
+    history: list[tuple[str, str]]
     # Produced by nodes.
     subqueries: list[str]
     chunks: list[RetrievedChunk]
