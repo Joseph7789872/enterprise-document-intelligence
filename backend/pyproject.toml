@@ -17,6 +17,9 @@ dependencies = [
     "passlib[argon2]>=1.7.4",
     "cryptography>=42.0",
     "python-multipart>=0.0.9",
+    # Phase C: content connectors — outbound HTTP (URL import + Notion API) + HTML→text.
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
     # Phase 1: ingestion + vector search
     "pgvector>=0.3",
     "openai>=1.40",
@@ -98,6 +101,7 @@ module = [
     "llama_index.*",
     "pypdf.*",
     "docx.*",
+    "bs4.*",
     "boto3.*",
     "botocore.*",
     "sentence_transformers.*",

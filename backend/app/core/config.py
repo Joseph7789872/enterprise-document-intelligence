@@ -144,6 +144,14 @@ class Settings(BaseSettings):
     # an honest "here's what I found, I'm not fully sure" instead of a human gate.
     ENABLE_HUMAN_REVIEW: bool = True
 
+    # ── Phase C: content connectors (URL import + Notion) ─────────────────────────────
+    # External egress: fetching arbitrary URLs and the Notion API. OFF by default in
+    # production (a deliberate, reviewed surface); the test suite pins it ON in conftest.
+    ENABLE_CONNECTORS: bool = False
+    # Hard cap on bytes fetched for a URL import (defends against huge/streaming pages).
+    URL_IMPORT_MAX_BYTES: int = 5 * 1024 * 1024
+    NOTION_API_BASE: str = "https://api.notion.com/v1"
+
     # ── Self-hosted LLM + deployment modes (Phase 7) ──────────────────────────────────
     # The self-hosted "profile" used by the model router for sensitive documents (and as
     # the baseline when LLM_PROVIDER=openai_compatible / in private/air-gapped modes).

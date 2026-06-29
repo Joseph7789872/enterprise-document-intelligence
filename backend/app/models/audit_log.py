@@ -84,6 +84,11 @@ class AuditAction(str, enum.Enum):
     SEGMENT_UPDATED = "segment.updated"
     SEGMENT_DELETED = "segment.deleted"
     DOCUMENT_SEGMENTS_UPDATED = "document.segments_updated"
+    # Time-to-value: templates + connectors (Phase C)
+    TEMPLATE_APPLIED = "template.applied"
+    URL_IMPORTED = "document.url_imported"
+    CONNECTOR_TOKEN_SET = "connector.token_set"  # noqa: S105 - audit action name, not a secret
+    CONNECTOR_SYNCED = "connector.synced"
 
 
 class AuditLog(Base):

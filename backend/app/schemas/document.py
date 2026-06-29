@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from app.models.document import ContentVisibility, IngestionStatus, SalesContentType
 
@@ -50,3 +51,25 @@ class UploadResponse(BaseModel):
     id: uuid.UUID
     filename: str
     status: IngestionStatus
+
+
+# ── Bulk upload (Phase C) ────────────────────────────────────────────────────────────
+class BatchItemResult(BaseModel):
+    """Per-file outcome in a bulk upload (one bad file never fails the whole batch)."""
+
+    filename: str
+    status: Literal["accepted", "rejected"]
+    id: uuid.UUID | None = None
+    error: str | None = None
+
+
+class BatchUploadResponse(BaseModel):
+    results: list[BatchItemResult]
+
+
+# ── URL import (Phase C) ─────────────────────────────────────────────────────────────
+class UrlImportRequest(BaseModel):
+    url: HttpUrl
+    content_type: SalesContentType = SalesContentType.PRODUCT
+    visibility: ContentVisibility = ContentVisibility.REP_VISIBLE
+    segment_ids: list[uuid.UUID] = Field(default_factory=list)

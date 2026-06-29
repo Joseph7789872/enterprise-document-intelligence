@@ -43,3 +43,8 @@ if settings.ENABLE_EVALS:
     api_router.include_router(evals.router)
 if settings.ENABLE_COMPLIANCE:
     api_router.include_router(compliance.router)
+# Phase C: external content connectors (Notion). External egress, off by default.
+if settings.ENABLE_CONNECTORS:
+    from app.api.v1 import connectors
+
+    api_router.include_router(connectors.router)

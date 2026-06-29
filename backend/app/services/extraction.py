@@ -37,8 +37,7 @@ def extract_text(data: bytes, content_type: str, filename: str) -> ExtractedDoc:
     if ext == "txt" or ct.startswith("text/plain"):
         return _extract_txt(data)
     if ext in {"html", "htm"} or "html" in ct:
-        # Deferred to a later phase; rejected explicitly for now.
-        raise ExtractionError("HTML extraction is not supported yet.")
+        return _extract_html(data)
     raise ExtractionError(f"Unsupported document type: ext={ext!r} content_type={content_type!r}")
 
 
@@ -66,6 +65,30 @@ def _extract_docx(data: bytes) -> ExtractedDoc:
         raise ExtractionError(f"Failed to parse DOCX: {exc}") from exc
     if not text:
         raise ExtractionError("DOCX contained no extractable text.")
+    return ExtractedDoc(text=text, page_count=None)
+
+
+def _extract_html(data: bytes) -> ExtractedDoc:
+    try:
+        from bs4 import BeautifulSoup
+
+        html = None
+        for encoding in ("utf-8", "latin-1"):
+            try:
+                html = data.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        soup = BeautifulSoup(html or "", "html.parser")
+        # Drop non-content tags before pulling text.
+        for tag in soup(["script", "style", "noscript", "template"]):
+            tag.decompose()
+        # get_text with a separator, then collapse runs of whitespace.
+        text = " ".join(soup.get_text(separator=" ").split())
+    except Exception as exc:
+        raise ExtractionError(f"Failed to parse HTML: {exc}") from exc
+    if not text:
+        raise ExtractionError("HTML contained no extractable text.")
     return ExtractedDoc(text=text, page_count=None)
 
 

@@ -7,11 +7,14 @@ import {
   type ContentType,
   type CurrentUser,
   type DocumentInfo,
+  type NotionStatus,
   type RampTopic,
   type Role,
   type SavedObjection,
   type Segment,
+  type TemplateInfo,
   type Visibility,
+  applyTemplate,
   clearToken,
   createObjection,
   createRampTopic,
@@ -23,14 +26,20 @@ import {
   deleteRampTopic,
   deleteSegment,
   getMe,
+  getNotionStatus,
   getToken,
+  importUrl,
   isManager,
   listDocuments,
   listObjections,
   listRampTopics,
   listSegments,
+  listTemplates,
   listUsers,
+  setNotionToken,
+  syncNotion,
   uploadDocument,
+  uploadDocumentsBatch,
 } from "@/lib/api";
 
 const CONTENT_TYPES: ContentType[] = [
@@ -70,6 +79,21 @@ export default function AdminPage() {
   const [segName, setSegName] = useState("");
   const [objSegments, setObjSegments] = useState<string[]>([]);
 
+  // Phase C: templates, bulk upload, URL import, Notion
+  const [templates, setTemplates] = useState<TemplateInfo[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [templateMsg, setTemplateMsg] = useState<string | null>(null);
+  const bulkRef = useRef<HTMLInputElement>(null);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [importUrlValue, setImportUrlValue] = useState("");
+  const [urlMsg, setUrlMsg] = useState<string | null>(null);
+  const [urlBusy, setUrlBusy] = useState(false);
+  const [notion, setNotion] = useState<NotionStatus | null>(null);
+  const [notionToken, setNotionTokenValue] = useState("");
+  const [notionMsg, setNotionMsg] = useState<string | null>(null);
+  const [notionBusy, setNotionBusy] = useState(false);
+
   // Reps
   const [users, setUsers] = useState<CurrentUser[]>([]);
   const [repEmail, setRepEmail] = useState("");
@@ -102,6 +126,9 @@ export default function AdminPage() {
       listRampTopics().then(setTopics).catch(() => {}),
       listObjections().then(setObjections).catch(() => {}),
       listSegments().then(setSegments).catch(() => {}),
+      listTemplates().then(setTemplates).catch(() => {}),
+      // Notion status is best-effort; connectors may be disabled (404).
+      getNotionStatus().then(setNotion).catch(() => setNotion(null)),
     ]);
   }, [refreshDocs]);
 
@@ -184,6 +211,94 @@ export default function AdminPage() {
     return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
   }
 
+  async function onApplyTemplate() {
+    if (!selectedTemplate) return;
+    setTemplateMsg(null);
+    try {
+      const r = await applyTemplate(selectedTemplate);
+      const n =
+        r.segments.created.length + r.ramp_topics.created.length + r.objections.created.length;
+      setTemplateMsg(
+        `Added ${r.segments.created.length} segments, ${r.ramp_topics.created.length} ramp topics, ` +
+          `${r.objections.created.length} objections${n === 0 ? " (all already existed)" : ""}.`,
+      );
+      await refreshAll();
+    } catch (err) {
+      setTemplateMsg(err instanceof Error ? err.message : "Could not apply template");
+    }
+  }
+
+  async function onBulkUpload(e: React.FormEvent) {
+    e.preventDefault();
+    const files = Array.from(bulkRef.current?.files ?? []);
+    if (files.length === 0) return;
+    setBulkMsg(null);
+    setBulkBusy(true);
+    try {
+      const r = await uploadDocumentsBatch(files, contentType, visibility, uploadSegments);
+      const ok = r.results.filter((x) => x.status === "accepted").length;
+      const bad = r.results.filter((x) => x.status === "rejected");
+      setBulkMsg(
+        `Uploaded ${ok}/${r.results.length} files.` +
+          (bad.length ? ` Rejected: ${bad.map((b) => `${b.filename} (${b.error})`).join(", ")}` : ""),
+      );
+      if (bulkRef.current) bulkRef.current.value = "";
+      await refreshDocs();
+    } catch (err) {
+      setBulkMsg(err instanceof Error ? err.message : "Bulk upload failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function onImportUrl(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importUrlValue.trim()) return;
+    setUrlMsg(null);
+    setUrlBusy(true);
+    try {
+      const doc = await importUrl(importUrlValue.trim(), contentType, visibility, uploadSegments);
+      setUrlMsg(`Imported "${doc.filename}" — processing…`);
+      setImportUrlValue("");
+      await refreshDocs();
+    } catch (err) {
+      setUrlMsg(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setUrlBusy(false);
+    }
+  }
+
+  async function onSaveNotionToken(e: React.FormEvent) {
+    e.preventDefault();
+    if (!notionToken.trim()) return;
+    setNotionMsg(null);
+    setNotionBusy(true);
+    try {
+      setNotion(await setNotionToken(notionToken.trim()));
+      setNotionTokenValue("");
+      setNotionMsg("Token saved.");
+    } catch (err) {
+      setNotionMsg(err instanceof Error ? err.message : "Could not save token");
+    } finally {
+      setNotionBusy(false);
+    }
+  }
+
+  async function onSyncNotion() {
+    setNotionMsg(null);
+    setNotionBusy(true);
+    try {
+      const r = await syncNotion();
+      const ok = r.results.filter((x) => x.status === "accepted").length;
+      setNotionMsg(`Synced ${ok}/${r.results.length} Notion pages.`);
+      await refreshAll();
+    } catch (err) {
+      setNotionMsg(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setNotionBusy(false);
+    }
+  }
+
   async function onRemoveDoc(id: string) {
     await deleteDocument(id);
     await refreshDocs();
@@ -255,6 +370,39 @@ export default function AdminPage() {
         Manage the content your reps can query, invite reps, and curate the ramp checklist
         and objection library.
       </p>
+
+      {/* Quick setup (starter templates) */}
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Quick setup</h2>
+        <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+          New team? Apply a starter template to seed segments, a ramp checklist, and an
+          objection library so reps aren&apos;t staring at an empty box. Safe to re-apply —
+          anything that already exists is skipped.
+        </p>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <select
+            value={selectedTemplate}
+            onChange={(e) => setSelectedTemplate(e.target.value)}
+            style={{ ...selectStyle, width: "auto", minWidth: 240 }}
+          >
+            <option value="">Choose a template…</option>
+            {templates.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.name} ({t.segment_count} segments · {t.ramp_count} ramp · {t.objection_count} objections)
+              </option>
+            ))}
+          </select>
+          <button onClick={onApplyTemplate} disabled={!selectedTemplate} style={{ marginTop: 0 }}>
+            Apply template
+          </button>
+        </div>
+        {selectedTemplate && (
+          <p className="muted" style={{ fontSize: "0.8rem" }}>
+            {templates.find((t) => t.key === selectedTemplate)?.description}
+          </p>
+        )}
+        {templateMsg && <p className="muted" style={{ marginTop: 8 }}>{templateMsg}</p>}
+      </div>
 
       {/* Content */}
       <div className="card">
@@ -345,6 +493,86 @@ export default function AdminPage() {
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* More ways to add content (Phase C): bulk, URL, Notion */}
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Import content</h2>
+        <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+          Bulk-upload many files at once, import a public web page by URL, or sync pages
+          from Notion. New content uses the content type, visibility, and segments selected
+          in the upload form above.
+        </p>
+
+        <form onSubmit={onBulkUpload} style={{ marginBottom: 20 }}>
+          <label htmlFor="bulk">Bulk upload (PDF, DOCX, TXT — select several)</label>
+          <input ref={bulkRef} id="bulk" type="file" accept=".pdf,.docx,.txt" multiple required />
+          <button type="submit" disabled={bulkBusy}>
+            {bulkBusy ? "Uploading…" : "Upload files"}
+          </button>
+          {bulkMsg && <p className="muted" style={{ marginTop: 12 }}>{bulkMsg}</p>}
+        </form>
+
+        <form onSubmit={onImportUrl}>
+          <label htmlFor="url">Import from URL</label>
+          <input
+            id="url"
+            type="url"
+            value={importUrlValue}
+            onChange={(e) => setImportUrlValue(e.target.value)}
+            placeholder="https://example.com/our-pricing-page"
+          />
+          <button type="submit" disabled={urlBusy || !importUrlValue.trim()}>
+            {urlBusy ? "Importing…" : "Import URL"}
+          </button>
+          {urlMsg && <p className="muted" style={{ marginTop: 12 }}>{urlMsg}</p>}
+        </form>
+      </div>
+
+      {/* Notion connector */}
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Notion</h2>
+        <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+          Create a Notion internal integration, share the pages you want indexed with it,
+          then paste its token here. Sync pulls those pages in as rep-visible content.
+        </p>
+        <p className="muted" style={{ fontSize: "0.85rem" }}>
+          Status:{" "}
+          {notion?.connected ? (
+            <>
+              <span className="badge">connected</span>
+              {notion.last_synced_at
+                ? ` — last synced ${new Date(notion.last_synced_at).toLocaleString()}`
+                : " — not yet synced"}
+            </>
+          ) : (
+            <span className="badge">not connected</span>
+          )}
+        </p>
+        <form onSubmit={onSaveNotionToken}>
+          <label htmlFor="ntn">Notion integration token</label>
+          <input
+            id="ntn"
+            type="password"
+            value={notionToken}
+            onChange={(e) => setNotionTokenValue(e.target.value)}
+            placeholder="secret_…"
+          />
+          <div style={{ display: "flex", gap: 12 }}>
+            <button type="submit" disabled={notionBusy || !notionToken.trim()}>
+              {notion?.connected ? "Update token" : "Connect"}
+            </button>
+            <button
+              type="button"
+              onClick={onSyncNotion}
+              disabled={notionBusy || !notion?.connected}
+              style={{ marginTop: 0 }}
+            >
+              {notionBusy ? "Working…" : "Sync now"}
+            </button>
+          </div>
+          {notionMsg && <p className="muted" style={{ marginTop: 12 }}>{notionMsg}</p>}
+        </form>
       </div>
 
       {/* Segments (ICP) */}

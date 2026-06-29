@@ -38,6 +38,9 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "")
 # a developer's local `.env` (the v1 product runs with it OFF). Tests that need it off set
 # it explicitly via monkeypatch.
 os.environ.setdefault("ENABLE_HUMAN_REVIEW", "true")
+# Phase C: connectors (URL import + Notion) default OFF in prod; pin ON so the suite
+# exercises them. Tests use injected Fake fetcher/Notion clients — no real egress.
+os.environ.setdefault("ENABLE_CONNECTORS", "true")
 
 import pytest
 import pytest_asyncio

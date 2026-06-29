@@ -406,3 +406,105 @@ export async function uploadDocument(
   }
   return (await res.json()) as DocumentInfo;
 }
+
+// ── Phase C: bulk upload, URL import, connectors, templates ───────────────────────────
+export interface BatchItemResult {
+  filename: string;
+  status: "accepted" | "rejected";
+  id: string | null;
+  error: string | null;
+}
+
+export async function uploadDocumentsBatch(
+  files: File[],
+  contentType: ContentType = "product",
+  visibility: Visibility = "rep_visible",
+  segmentIds: string[] = [],
+): Promise<{ results: BatchItemResult[] }> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  form.append("content_type", contentType);
+  form.append("visibility", visibility);
+  for (const sid of segmentIds) form.append("segment_ids", sid);
+  const token = getToken();
+  const res = await fetch(`${API_URL}/documents/batch`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  // 207 Multi-Status is an expected success here (mixed per-file results).
+  if (!res.ok && res.status !== 207) {
+    throw new Error(`Bulk upload failed (${res.status})`);
+  }
+  return (await res.json()) as { results: BatchItemResult[] };
+}
+
+export async function importUrl(
+  url: string,
+  contentType: ContentType = "product",
+  visibility: Visibility = "rep_visible",
+  segmentIds: string[] = [],
+): Promise<DocumentInfo> {
+  return request<DocumentInfo>("/documents/import-url", {
+    method: "POST",
+    body: JSON.stringify({
+      url,
+      content_type: contentType,
+      visibility,
+      segment_ids: segmentIds,
+    }),
+  });
+}
+
+export interface NotionStatus {
+  connected: boolean;
+  enabled: boolean;
+  last_synced_at: string | null;
+}
+
+export async function getNotionStatus(): Promise<NotionStatus> {
+  return request<NotionStatus>("/connectors/notion");
+}
+
+export async function setNotionToken(token: string): Promise<NotionStatus> {
+  return request<NotionStatus>("/connectors/notion/token", {
+    method: "PUT",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function syncNotion(): Promise<{ results: BatchItemResult[] }> {
+  return request<{ results: BatchItemResult[] }>("/connectors/notion/sync", { method: "POST" });
+}
+
+export interface TemplateInfo {
+  key: string;
+  name: string;
+  description: string;
+  segment_count: number;
+  ramp_count: number;
+  objection_count: number;
+}
+
+interface TemplateBucket {
+  created: string[];
+  skipped: string[];
+}
+
+export interface TemplateApplyResult {
+  template_key: string;
+  segments: TemplateBucket;
+  ramp_topics: TemplateBucket;
+  objections: TemplateBucket;
+}
+
+export async function listTemplates(): Promise<TemplateInfo[]> {
+  return request<TemplateInfo[]>("/admin/templates");
+}
+
+export async function applyTemplate(templateKey: string): Promise<TemplateApplyResult> {
+  return request<TemplateApplyResult>("/admin/templates/apply", {
+    method: "POST",
+    body: JSON.stringify({ template_key: templateKey }),
+  });
+}

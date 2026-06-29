@@ -30,9 +30,16 @@ from app.schemas.acl import (
     GroupRead,
 )
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreated, ApiKeyRead
+from app.schemas.templates import (
+    TemplateApplyRequest,
+    TemplateApplyResponse,
+    TemplateBucket,
+    TemplateInfo,
+)
 from app.schemas.tenant import TenantSettings, TenantSettingsUpdate
 from app.schemas.user import UserRead
-from app.services import api_key_service, audit_service
+from app.services import api_key_service, audit_service, template_service
+from app.services.templates_data import TEMPLATES
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -405,3 +412,62 @@ async def update_tenant_settings(
         outcome="allow",
     )
     return settings_obj
+
+
+# ── Starter templates (Phase C) ──────────────────────────────────────────────────────
+@router.get("/templates", response_model=list[TemplateInfo])
+async def list_templates(
+    current: CurrentUser = Depends(_admin),
+) -> list[TemplateInfo]:
+    """Available starter templates a manager can apply to seed initial content."""
+    return [
+        TemplateInfo(
+            key=t.key,
+            name=t.name,
+            description=t.description,
+            segment_count=len(t.segments),
+            ramp_count=len(t.ramp_topics),
+            objection_count=len(t.objections),
+        )
+        for t in TEMPLATES.values()
+    ]
+
+
+@router.post("/templates/apply", response_model=TemplateApplyResponse)
+async def apply_template(
+    body: TemplateApplyRequest,
+    request: Request,
+    current: CurrentUser = Depends(_admin),
+    db: AsyncSession = Depends(get_db),
+) -> TemplateApplyResponse:
+    """Seed segments + ramp topics + objections from a starter template.
+
+    Idempotent: existing names/titles/labels are skipped (never duplicated)."""
+    result = await template_service.apply_template(
+        db, tenant_id=current.tenant_id, template_key=body.template_key
+    )
+    await audit_service.write_event(
+        db,
+        tenant_id=current.tenant_id,
+        action=AuditAction.TEMPLATE_APPLIED,
+        actor_user_id=current.id,
+        resource_type="template",
+        resource_id=body.template_key,
+        metadata={
+            "segments_created": len(result.segments.created),
+            "ramp_created": len(result.ramp_topics.created),
+            "objections_created": len(result.objections.created),
+        },
+        ip_address=client_ip(request),
+        outcome="allow",
+    )
+    return TemplateApplyResponse(
+        template_key=result.template_key,
+        segments=TemplateBucket(created=result.segments.created, skipped=result.segments.skipped),
+        ramp_topics=TemplateBucket(
+            created=result.ramp_topics.created, skipped=result.ramp_topics.skipped
+        ),
+        objections=TemplateBucket(
+            created=result.objections.created, skipped=result.objections.skipped
+        ),
+    )

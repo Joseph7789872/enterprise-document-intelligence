@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -22,7 +21,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.crypto import encrypt
 from app.core.deps import CurrentUser, client_ip, get_current_user, get_db, require_role
 from app.core.logging import get_trace_id
 from app.errors import AppError, NotFoundError
@@ -33,12 +31,19 @@ from app.models.document_chunk import DocumentChunk
 from app.models.group import Group
 from app.models.user import User, UserRole
 from app.schemas.acl import ACLGrantCreate, ACLGrantRead
-from app.schemas.document import DocumentRead, UploadResponse
+from app.schemas.document import (
+    BatchItemResult,
+    BatchUploadResponse,
+    DocumentRead,
+    UploadResponse,
+    UrlImportRequest,
+)
 from app.schemas.segment import SegmentTagUpdate
 from app.services import audit_service, authz, segment_service
 from app.services.authz import Permission
-from app.services.ingestion import process_document
-from app.storage import StorageError, document_storage_key, get_storage
+from app.services.fetcher import FetchError, get_fetcher
+from app.services.ingestion_intake import IntakeError, intake_document
+from app.storage import StorageError, get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +63,11 @@ class UnsupportedMediaTypeError(AppError):
 class MalwareDetectedError(AppError):
     status_code = 422
     message = "Uploaded file was rejected by malware scanning."
+
+
+class UrlImportError(AppError):
+    status_code = 422
+    message = "Could not import the requested URL."
 
 
 def _extension(filename: str) -> str:
@@ -93,75 +103,143 @@ async def upload_document(
     if not data:
         raise UnsupportedMediaTypeError("Uploaded file is empty.")
 
-    # Malware gate — runs before anything touches storage.
-    from app.services import malware_scan
-
-    scan = malware_scan.scan(data)
-    if not scan.clean:
-        await audit_service.record_event_committed(
+    try:
+        document = await intake_document(
+            db,
             tenant_id=current.tenant_id,
-            action=AuditAction.DOCUMENT_UPLOADED,
-            actor_user_id=current.id,
-            resource_type="document",
-            metadata={"rejected": "malware", "signature": scan.signature, "filename": filename},
-            ip_address=client_ip(request),
+            owner_user_id=current.id,
+            filename=filename,
+            mime_type=file.content_type or "application/octet-stream",
+            data=data,
+            content_type=content_type,
+            visibility=visibility,
+            segment_ids=segment_ids,
+            background=background,
             trace_id=get_trace_id(),
+            source="upload",
+            ip_address=client_ip(request),
         )
-        raise MalwareDetectedError(f"Malware signature detected: {scan.signature}.")
+    except IntakeError as exc:
+        if exc.reason == "malware":
+            # Record the rejection in its own committed transaction (it survives the
+            # request rollback that the 422 triggers).
+            await audit_service.record_event_committed(
+                tenant_id=current.tenant_id,
+                action=AuditAction.DOCUMENT_UPLOADED,
+                actor_user_id=current.id,
+                resource_type="document",
+                metadata={"rejected": "malware", "signature": exc.signature, "filename": filename},
+                ip_address=client_ip(request),
+                trace_id=get_trace_id(),
+            )
+            raise MalwareDetectedError(f"Malware signature detected: {exc.signature}.") from exc
+        raise UnsupportedMediaTypeError("Uploaded file is empty.") from exc
 
-    document_id = uuid.uuid4()
-    sha256 = hashlib.sha256(data).hexdigest()
-    storage_key = document_storage_key(current.tenant_id, document_id)
+    await db.commit()
+    return UploadResponse(id=document.id, filename=filename, status=IngestionStatus.PENDING)
 
-    # Envelope-encrypt the bytes, then persist the token to object storage.
-    token = encrypt(data).to_token().encode("utf-8")
-    get_storage().put(storage_key, token)
 
-    document = Document(
-        id=document_id,
+@router.post(
+    "/batch",
+    response_model=BatchUploadResponse,
+    status_code=status.HTTP_207_MULTI_STATUS,
+)
+async def upload_documents_batch(
+    request: Request,
+    background: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    content_type: SalesContentType = Form(SalesContentType.PRODUCT),
+    visibility: ContentVisibility = Form(ContentVisibility.REP_VISIBLE),
+    segment_ids: list[uuid.UUID] = Form(default=[]),
+    current: CurrentUser = Depends(require_role(UserRole.OWNER, UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_db),
+) -> BatchUploadResponse:
+    """Upload several files at once. One bad file is reported as ``rejected`` and never
+    fails the batch; accepted files share a single commit and each queues ingestion."""
+    results: list[BatchItemResult] = []
+    for f in files:
+        fname = f.filename or "upload"
+        try:
+            ext = _extension(fname)
+            if ext not in settings.allowed_upload_extensions:
+                results.append(
+                    BatchItemResult(filename=fname, status="rejected", error="unsupported_type")
+                )
+                continue
+            data = await f.read(settings.max_upload_bytes + 1)
+            if len(data) > settings.max_upload_bytes:
+                results.append(
+                    BatchItemResult(filename=fname, status="rejected", error="too_large")
+                )
+                continue
+            doc = await intake_document(
+                db,
+                tenant_id=current.tenant_id,
+                owner_user_id=current.id,
+                filename=fname,
+                mime_type=f.content_type or "application/octet-stream",
+                data=data,
+                content_type=content_type,
+                visibility=visibility,
+                segment_ids=segment_ids,
+                background=background,
+                trace_id=get_trace_id(),
+                source="bulk_upload",
+                ip_address=client_ip(request),
+            )
+            results.append(BatchItemResult(filename=fname, status="accepted", id=doc.id))
+        except IntakeError as exc:
+            results.append(BatchItemResult(filename=fname, status="rejected", error=exc.reason))
+    await db.commit()
+    return BatchUploadResponse(results=results)
+
+
+def _filename_from_url(url: str) -> str:
+    """A readable, .html-suffixed filename derived from a URL (host + path slug)."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    slug = (parsed.path.strip("/") or "index").replace("/", "-")
+    base = f"{parsed.netloc}-{slug}" if parsed.netloc else slug
+    base = base[:200] or "imported-page"
+    return base if base.endswith((".html", ".htm")) else f"{base}.html"
+
+
+@router.post("/import-url", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)
+async def import_url(
+    body: UrlImportRequest,
+    request: Request,
+    background: BackgroundTasks,
+    current: CurrentUser = Depends(require_role(UserRole.OWNER, UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_db),
+) -> UploadResponse:
+    """Fetch a public URL, store its HTML, and queue ingestion (HTML → text)."""
+    if not settings.ENABLE_CONNECTORS:
+        raise NotFoundError("URL import is not enabled.")
+    url = str(body.url)
+    try:
+        fetched = await get_fetcher().fetch(url)
+    except FetchError as exc:
+        raise UrlImportError(f"Could not import URL: {exc}") from exc
+
+    filename = _filename_from_url(fetched.final_url or url)
+    document = await intake_document(
+        db,
         tenant_id=current.tenant_id,
         owner_user_id=current.id,
         filename=filename,
-        mime_type=file.content_type or "application/octet-stream",
-        size_bytes=len(data),
-        sha256=sha256,
-        storage_key=storage_key,
-        encryption_key_version=settings.ENCRYPTION_KEY_VERSION,
-        content_type=content_type,
-        visibility=visibility,
-        status=IngestionStatus.PENDING,
-        chunk_count=0,
-    )
-    db.add(document)
-    await db.flush()
-
-    # Apply ICP/segment tags (validates each belongs to the tenant).
-    if segment_ids:
-        await segment_service.replace_document_segments(
-            db, tenant_id=current.tenant_id, document_id=document_id, segment_ids=segment_ids
-        )
-
-    await audit_service.write_event(
-        db,
-        tenant_id=current.tenant_id,
-        action=AuditAction.DOCUMENT_UPLOADED,
-        actor_user_id=current.id,
-        resource_type="document",
-        resource_id=str(document_id),
-        metadata={
-            "filename": filename,
-            "size_bytes": len(data),
-            "content_type": content_type.value,
-            "visibility": visibility.value,
-        },
+        mime_type="text/html",
+        data=fetched.content,
+        content_type=body.content_type,
+        visibility=body.visibility,
+        segment_ids=body.segment_ids,
+        background=background,
+        trace_id=get_trace_id(),
+        source="url_import",
         ip_address=client_ip(request),
     )
     await db.commit()
-
-    # Queue ingestion after the response is sent.
-    background.add_task(process_document, document_id, get_trace_id())
-
-    return UploadResponse(id=document_id, filename=filename, status=IngestionStatus.PENDING)
+    return UploadResponse(id=document.id, filename=filename, status=IngestionStatus.PENDING)
 
 
 @router.get("", response_model=list[DocumentRead])

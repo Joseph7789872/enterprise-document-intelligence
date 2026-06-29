@@ -30,6 +30,7 @@ class Base(DeclarativeBase):
 from app.models import (  # noqa: E402,F401
     api_key,
     audit_log,
+    connector_credential,
     conversation,
     data_subject_request,
     document,
