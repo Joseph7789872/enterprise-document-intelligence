@@ -376,6 +376,9 @@ export default function AdminPage() {
           <Link href="/app" className="muted" style={{ fontSize: "0.9rem" }}>
             Chat
           </Link>
+          <Link href="/analytics" className="muted" style={{ fontSize: "0.9rem" }}>
+            Analytics
+          </Link>
           <button onClick={signOut} style={{ marginTop: 0 }}>
             Sign out
           </button>

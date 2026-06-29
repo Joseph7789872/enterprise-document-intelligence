@@ -99,6 +99,9 @@ class AuditAction(str, enum.Enum):
     SUBSCRIPTION_UPDATED = "subscription.updated"
     CHECKOUT_STARTED = "billing.checkout_started"
     BILLING_PORTAL_OPENED = "billing.portal_opened"
+    # Manager analytics (Phase E)
+    ANALYTICS_VIEWED = "analytics.viewed"
+    ANALYTICS_EXPORTED = "analytics.exported"
 
 
 class AuditLog(Base):

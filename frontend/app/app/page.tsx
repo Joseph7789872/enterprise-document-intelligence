@@ -222,6 +222,11 @@ export default function ChatPage() {
               Admin
             </Link>
           )}
+          {manager && (
+            <Link href="/analytics" className="muted" style={{ fontSize: "0.9rem" }}>
+              Analytics
+            </Link>
+          )}
           <Link href="/log" className="muted" style={{ fontSize: "0.9rem" }}>
             History
           </Link>

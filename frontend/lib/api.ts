@@ -655,3 +655,98 @@ export async function startCheckout(planKey: string): Promise<{ checkout_url: st
 export async function openBillingPortal(): Promise<{ portal_url: string }> {
   return request<{ portal_url: string }>("/billing/portal", { method: "POST" });
 }
+
+// ── Phase E: manager analytics ────────────────────────────────────────────────────────
+export interface RepActivity {
+  user_id: string;
+  email: string;
+  role: Role;
+  query_count: number;
+  answered_count: number;
+  avg_confidence: number | null;
+  last_active: string | null;
+  active: boolean;
+}
+
+export interface TrendPoint {
+  date: string;
+  count: number;
+}
+
+export interface AnswerQuality {
+  total: number;
+  avg_confidence: number | null;
+  low_confidence: number;
+  pending_approval: number;
+  rejected: number;
+  with_citations: number;
+  citation_coverage_pct: number;
+}
+
+export interface CitedDocument {
+  document_id: string;
+  filename: string;
+  citation_count: number;
+}
+
+export interface UncitedDocument {
+  document_id: string;
+  filename: string;
+  content_type: string;
+}
+
+export interface UploadsByType {
+  content_type: string;
+  count: number;
+}
+
+export interface ContentInsights {
+  most_cited: CitedDocument[];
+  uncited_documents: UncitedDocument[];
+  uploads_by_type: UploadsByType[];
+}
+
+export interface AnalyticsOverview {
+  days: number;
+  since: string;
+  total_queries: number;
+  active_reps: number;
+  rep_activity: RepActivity[];
+  query_trend: TrendPoint[];
+  answer_quality: AnswerQuality;
+  content_insights: ContentInsights;
+}
+
+export interface LowConfidenceItem {
+  query_id: string;
+  user_email: string;
+  confidence: number | null;
+  question: string;
+  created_at: string;
+}
+
+export async function getAnalyticsOverview(days = 30): Promise<AnalyticsOverview> {
+  return request<AnalyticsOverview>(`/analytics/overview?days=${days}`);
+}
+
+export async function getLowConfidence(days = 30, limit = 20): Promise<LowConfidenceItem[]> {
+  return request<LowConfidenceItem[]>(`/analytics/low-confidence?days=${days}&limit=${limit}`);
+}
+
+// Download the per-rep activity CSV (needs the auth header, so fetch → blob → anchor click).
+export async function exportAnalyticsCsv(days = 30): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${await apiBase()}/analytics/export?days=${days}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) throw new Error(`Export failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "rep_activity.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin,
+    analytics,
     audit,
     auth,
     compliance,
@@ -36,6 +37,8 @@ api_router.include_router(ramp.router)
 api_router.include_router(objections.router)
 # Phase B: ICP / segments (AE-readable list, manager CRUD).
 api_router.include_router(segments.router)
+# Phase E: manager analytics dashboard (manager-only, read-only over existing data).
+api_router.include_router(analytics.router)
 
 # Enterprise-only surfaces — mounted only when their v1 feature flag is on (off in the
 # production sales product; on in dev/test so the suite still covers them).
