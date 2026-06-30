@@ -1,18 +1,15 @@
 import Link from "next/link";
-import { LEGAL, TEMPLATE_NOTE } from "@/lib/legal";
+import { LEGAL } from "@/lib/legal";
+import { LegalShell } from "@/components";
 
 export const metadata = { title: "Security — Sales Assistant" };
 
 export default function SecurityPage() {
   return (
-    <main>
-      <div className="banner warn">{TEMPLATE_NOTE}</div>
-      <h1>Security overview</h1>
-      <p className="muted">
-        How {LEGAL.product} protects your data. For a security questionnaire or the latest details,
-        contact {LEGAL.contact}.
-      </p>
-
+    <LegalShell
+      title="Security overview"
+      meta={`How ${LEGAL.product} protects your data. For a security questionnaire or the latest details, contact ${LEGAL.contact}.`}
+    >
       <h2>Encryption</h2>
       <ul>
         <li>
@@ -66,10 +63,6 @@ export default function SecurityPage() {
         We do not sell your data or use your private content to train shared models. See the{" "}
         <Link href="/privacy">Privacy Policy</Link> and <Link href="/dpa">DPA</Link>.
       </p>
-
-      <p className="muted" style={{ marginTop: 24 }}>
-        <Link href="/">← Home</Link>
-      </p>
-    </main>
+    </LegalShell>
   );
 }

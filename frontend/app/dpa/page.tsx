@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { LEGAL, SUBPROCESSORS, TEMPLATE_NOTE } from "@/lib/legal";
+import { LEGAL, SUBPROCESSORS } from "@/lib/legal";
+import { LegalShell } from "@/components";
 
 export const metadata = { title: "Data Processing Addendum — Sales Assistant" };
 
 export default function DpaPage() {
   return (
-    <main>
-      <div className="banner warn">{TEMPLATE_NOTE}</div>
-      <h1>Data Processing Addendum</h1>
-      <p className="muted">Effective date: {LEGAL.effectiveDate}</p>
+    <LegalShell
+      title="Data Processing Addendum"
+      meta={`Effective date: ${LEGAL.effectiveDate}`}
+    >
       <p>
         This Data Processing Addendum (&ldquo;DPA&rdquo;) forms part of the agreement between you
         (&ldquo;Controller&rdquo;) and {LEGAL.company} (&ldquo;Processor&rdquo;) for {LEGAL.product}.
@@ -63,10 +64,6 @@ export default function DpaPage() {
 
       <h2>Contact</h2>
       <p>Data-protection inquiries: {LEGAL.contact}.</p>
-
-      <p className="muted" style={{ marginTop: 24 }}>
-        <Link href="/">← Home</Link>
-      </p>
-    </main>
+    </LegalShell>
   );
 }

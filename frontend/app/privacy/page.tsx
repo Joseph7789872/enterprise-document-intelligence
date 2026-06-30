@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { LEGAL, SUBPROCESSORS, TEMPLATE_NOTE } from "@/lib/legal";
+import { LEGAL, SUBPROCESSORS } from "@/lib/legal";
+import { LegalShell } from "@/components";
 
 export const metadata = { title: "Privacy Policy — Sales Assistant" };
 
 export default function PrivacyPage() {
   return (
-    <main>
-      <div className="banner warn">{TEMPLATE_NOTE}</div>
-      <h1>Privacy Policy</h1>
-      <p className="muted">Effective date: {LEGAL.effectiveDate}</p>
+    <LegalShell
+      title="Privacy Policy"
+      meta={`Effective date: ${LEGAL.effectiveDate}`}
+    >
       <p>
         This Privacy Policy explains how {LEGAL.company} (&ldquo;we&rdquo;) collects, uses, and
         protects information when you use {LEGAL.product} (the &ldquo;Service&rdquo;).
@@ -78,10 +79,6 @@ export default function PrivacyPage() {
 
       <h2>Contact</h2>
       <p>Questions about this policy: {LEGAL.contact}.</p>
-
-      <p className="muted" style={{ marginTop: 24 }}>
-        <Link href="/">← Home</Link>
-      </p>
-    </main>
+    </LegalShell>
   );
 }

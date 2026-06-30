@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { LEGAL, TEMPLATE_NOTE } from "@/lib/legal";
+import { LEGAL } from "@/lib/legal";
+import { LegalShell } from "@/components";
 
 export const metadata = { title: "Terms of Service — Sales Assistant" };
 
 export default function TermsPage() {
   return (
-    <main>
-      <div className="banner warn">{TEMPLATE_NOTE}</div>
-      <h1>Terms of Service</h1>
-      <p className="muted">Effective date: {LEGAL.effectiveDate}</p>
+    <LegalShell
+      title="Terms of Service"
+      meta={`Effective date: ${LEGAL.effectiveDate}`}
+    >
       <p>
         These Terms govern your use of {LEGAL.product} (the &ldquo;Service&rdquo;), provided by{" "}
         {LEGAL.company}. By creating a workspace or using the Service, you agree to these Terms.
@@ -61,10 +62,6 @@ export default function TermsPage() {
 
       <h2>Contact</h2>
       <p>Questions about these Terms: {LEGAL.contact}.</p>
-
-      <p className="muted" style={{ marginTop: 24 }}>
-        <Link href="/">← Home</Link>
-      </p>
-    </main>
+    </LegalShell>
   );
 }

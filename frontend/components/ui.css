@@ -997,3 +997,59 @@
   border-color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 6%, transparent);
 }
+
+/* ----------------------------------------------------------------------------
+   Prose (legal / trust pages)
+   ---------------------------------------------------------------------------- */
+.prose {
+  max-width: 68ch;
+}
+.prose__note {
+  margin-bottom: var(--space-xl);
+}
+.prose__meta {
+  color: var(--color-muted-foreground);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-xl);
+}
+.prose h1 {
+  margin-bottom: var(--space-sm);
+}
+.prose h2 {
+  font-size: var(--text-xl);
+  margin: var(--space-xl) 0 var(--space-sm);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+.prose p {
+  line-height: 1.7;
+  margin: 0 0 var(--space-md);
+}
+.prose ul {
+  padding-left: 1.25rem;
+  margin: 0 0 var(--space-md);
+}
+.prose li {
+  line-height: 1.7;
+  margin-bottom: var(--space-xs);
+}
+.prose li::marker {
+  color: var(--color-muted-foreground);
+}
+.prose strong {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+.prose code {
+  background: var(--surface-2);
+  border: 1px solid var(--color-border);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+.prose__back {
+  display: inline-block;
+  margin-top: var(--space-2xl);
+  font-size: var(--text-sm);
+}

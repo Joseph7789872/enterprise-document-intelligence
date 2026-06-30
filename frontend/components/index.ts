@@ -3,6 +3,7 @@
 export { AppHeader } from "./AppHeader";
 export { AppShell } from "./AppShell";
 export { AuthShell } from "./AuthShell";
+export { LegalShell } from "./LegalShell";
 export { SiteFooter } from "./SiteFooter";
 export { Button, type ButtonProps } from "./Button";
 export { Card, CardHeader, StatCard } from "./Card";
