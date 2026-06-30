@@ -27,6 +27,16 @@ class InvitationRead(BaseModel):
     created_at: datetime
 
 
+class InvitationCreated(InvitationRead):
+    """Returned when an invite is created or its key is regenerated. Includes the one-time
+    invite key (shared out-of-band via Slack/Teams) plus the workspace identifier the
+    teammate needs to join. The raw key is only ever exposed here, never on the list
+    endpoint."""
+
+    invite_key: str
+    tenant_slug: str
+
+
 class AcceptInviteResponse(BaseModel):
     """Returned on successful accept — mirrors RegisterResponse so the client logs in."""
 

@@ -41,9 +41,11 @@ class RegisterResponse(BaseModel):
 
 # ── Phase D: invitations + password reset ──────────────────────────────────────────
 class AcceptInviteRequest(BaseModel):
-    """Accept an emailed invitation by choosing a password."""
+    """Join a workspace with a shared invite key: workspace id + email + key + new password."""
 
-    token: str = Field(min_length=1)
+    tenant_slug: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    invite_key: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=12, max_length=128)
 
 

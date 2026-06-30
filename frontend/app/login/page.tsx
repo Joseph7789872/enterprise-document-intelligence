@@ -69,6 +69,9 @@ export default function LoginPage() {
           {" · "}
           New here? <Link href="/signup">Create an account</Link>
         </p>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Have an invite key? <Link href="/accept-invite">Join your workspace</Link>
+        </p>
       </form>
     </main>
   );

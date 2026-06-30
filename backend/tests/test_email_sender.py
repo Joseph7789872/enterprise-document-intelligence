@@ -21,11 +21,19 @@ async def test_fake_sender_captures_messages() -> None:
     assert sender.outbox[0].to == "a@b.com"
 
 
-def test_invite_template_has_accept_link() -> None:
-    msg = templates.invite_email("rep@acme.com", token="abc.def", tenant_name="Acme", role="member")
-    assert "/accept-invite?token=abc.def" in msg.text
+def test_invite_template_has_key_and_join_details() -> None:
+    msg = templates.invite_email(
+        "rep@acme.com",
+        invite_key="ABCDE-FGHJK-LMNPQ-RSTUV",
+        tenant_slug="acme",
+        tenant_name="Acme",
+        role="member",
+    )
+    assert "ABCDE-FGHJK-LMNPQ-RSTUV" in msg.text
+    assert "acme" in msg.text  # workspace identifier
+    assert "/accept-invite" in msg.text
     assert "Acme" in msg.text
-    assert msg.html is not None and "/accept-invite?token=abc.def" in msg.html
+    assert msg.html is not None and "ABCDE-FGHJK-LMNPQ-RSTUV" in msg.html
 
 
 def test_reset_template_has_reset_link() -> None:

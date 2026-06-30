@@ -107,9 +107,13 @@ async def accept_invite(
     body: AcceptInviteRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AcceptInviteResponse:
-    """Accept an emailed invitation by setting a password; returns tokens for auto-login."""
+    """Join a workspace with a shared invite key; returns tokens for auto-login."""
     user, _tenant, tokens = await invitation_service.accept_invitation(
-        db, raw_token=body.token, password=body.password
+        db,
+        tenant_slug=body.tenant_slug,
+        email=body.email,
+        invite_key=body.invite_key,
+        password=body.password,
     )
     return AcceptInviteResponse(
         user_id=user.id,

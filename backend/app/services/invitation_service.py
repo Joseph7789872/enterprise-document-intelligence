@@ -1,8 +1,10 @@
-"""Invitations — invite a teammate by email; they accept by setting a password (Phase D).
+"""Invitations — invite a teammate; they join with a shareable secret key (Phase D).
 
-Token design mirrors API keys: the emailed token is ``{invitation_id}.{secret}``; only
-``hash_password(secret)`` is stored, so the id gives an O(1) lookup and the secret is
-verified with ``verify_password`` (the plaintext lives only in the email). Seat limits are
+The manager creates an invite and gets a short, readable **invite key** (like an API key)
+to send the teammate out-of-band (Slack, Teams, etc.). The teammate joins by entering the
+workspace identifier, their email, a password, and the key. Only ``hash_password(key)`` is
+stored; the plaintext key is shown once at creation/regeneration and verified with
+``verify_password``. The pending invite is located by ``(tenant, email)``. Seat limits are
 enforced via ``billing_service`` so an invite can't exceed the plan.
 """
 
@@ -34,10 +36,24 @@ class InvalidInvitationError(AppError):
     message = "This invitation link is invalid or has expired."
 
 
-def _new_token(invitation_id: uuid.UUID) -> tuple[str, str]:
-    """Return ``(raw_token, secret)`` — raw is ``{id}.{secret}`` for the emailed link."""
-    secret = secrets.token_urlsafe(32)
-    return f"{invitation_id.hex}.{secret}", secret
+# Unambiguous alphabet (Crockford-style: no 0/O/1/I to avoid transcription errors when a
+# teammate types the key by hand). 20 chars → ~100 bits of entropy.
+_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+_KEY_LEN = 20
+_KEY_GROUP = 5
+
+
+def _normalize_key(key: str) -> str:
+    """Canonicalize a user-entered key: uppercase, drop dashes/spaces and any stray chars."""
+    return "".join(c for c in key.upper() if c in _KEY_ALPHABET)
+
+
+def _new_invite_key() -> tuple[str, str]:
+    """Return ``(display_key, normalized)`` — display is grouped (e.g. ABCDE-FGHJK-…) for
+    readability; the normalized (dash-free) form is what gets hashed and verified."""
+    raw = "".join(secrets.choice(_KEY_ALPHABET) for _ in range(_KEY_LEN))
+    display = "-".join(raw[i : i + _KEY_GROUP] for i in range(0, _KEY_LEN, _KEY_GROUP))
+    return display, raw
 
 
 def _is_expired(expires_at: datetime) -> bool:
@@ -89,38 +105,42 @@ async def create_invitation(
     db.add(invitation)
     await db.flush()  # assign invitation.id
 
-    raw_token, secret = _new_token(invitation.id)
-    invitation.token_hash = hash_password(secret)
+    display_key, normalized = _new_invite_key()
+    invitation.token_hash = hash_password(normalized)
     await db.flush()
-    return invitation, raw_token
+    return invitation, display_key
 
 
 async def accept_invitation(
-    db: AsyncSession, *, raw_token: str, password: str
+    db: AsyncSession, *, tenant_slug: str, email: str, invite_key: str, password: str
 ) -> tuple[User, Tenant, TokenPair]:
-    """Validate the token, create the active user, and return tokens for auto-login."""
-    invite_id_hex, _, secret = raw_token.partition(".")
-    if not invite_id_hex or not secret:
+    """Join a workspace with a shared invite key. Locates the pending invite by
+    (workspace slug, email), verifies the key, creates the active user, and returns tokens
+    for auto-login. Every failure raises the same generic error (no enumeration)."""
+    email = email.lower()
+    tenant = await db.scalar(select(Tenant).where(Tenant.slug == tenant_slug.lower()))
+    if tenant is None:
         raise InvalidInvitationError()
-    try:
-        invite_id = uuid.UUID(hex=invite_id_hex)
-    except ValueError as exc:
-        raise InvalidInvitationError() from exc
 
-    invitation = await db.get(Invitation, invite_id)
+    invitation = await db.scalar(
+        select(Invitation).where(
+            Invitation.tenant_id == tenant.id,
+            Invitation.email == email,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+    )
     if (
         invitation is None
-        or invitation.status != InvitationStatus.PENDING
         or _is_expired(invitation.expires_at)
-        or not verify_password(secret, invitation.token_hash)
+        or not verify_password(_normalize_key(invite_key), invitation.token_hash)
     ):
         raise InvalidInvitationError()
 
     # Guard against a race where the email got taken between invite and accept.
     existing_user = await db.scalar(
         select(User).where(
-            User.tenant_id == invitation.tenant_id,
-            User.email == invitation.email,
+            User.tenant_id == tenant.id,
+            User.email == email,
             User.deleted_at.is_(None),
         )
     )
@@ -128,7 +148,7 @@ async def accept_invitation(
         raise ConflictError("A user with that email already exists in this tenant.")
 
     user = User(
-        tenant_id=invitation.tenant_id,
+        tenant_id=tenant.id,
         email=invitation.email,
         hashed_password=hash_password(password),
         role=invitation.role,
@@ -139,9 +159,6 @@ async def accept_invitation(
     invitation.accepted_at = datetime.now(UTC)
     await db.flush()
 
-    tenant = await db.get(Tenant, invitation.tenant_id)
-    if tenant is None:  # FK guarantees this, but keep the type checker + runtime honest
-        raise InvalidInvitationError()
     await audit_service.write_event(
         db,
         tenant_id=invitation.tenant_id,
@@ -164,6 +181,25 @@ async def list_pending(db: AsyncSession, tenant_id: uuid.UUID) -> list[Invitatio
         .order_by(Invitation.created_at.desc())
     )
     return list(rows.all())
+
+
+async def regenerate_token(
+    db: AsyncSession, *, tenant_id: uuid.UUID, invitation_id: uuid.UUID
+) -> tuple[Invitation, str]:
+    """Mint a fresh invite key for an existing PENDING invite and return the new display
+    key. Lets a manager re-issue a key (e.g. to re-share over Slack) — the old key stops
+    working since only the latest hash is stored. Tenant-scoped."""
+    invitation = await db.get(Invitation, invitation_id)
+    if (
+        invitation is None
+        or invitation.tenant_id != tenant_id
+        or invitation.status != InvitationStatus.PENDING
+    ):
+        raise NotFoundError("Pending invitation not found.")
+    display_key, normalized = _new_invite_key()
+    invitation.token_hash = hash_password(normalized)
+    await db.flush()
+    return invitation, display_key
 
 
 async def revoke(db: AsyncSession, *, tenant_id: uuid.UUID, invitation_id: uuid.UUID) -> Invitation:

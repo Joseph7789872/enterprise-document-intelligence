@@ -42,6 +42,7 @@ import {
   listSegments,
   listTemplates,
   listUsers,
+  regenerateInvitationLink,
   revokeInvitation,
   setNotionToken,
   syncNotion,
@@ -110,6 +111,14 @@ export default function AdminPage() {
   const [repEmail, setRepEmail] = useState("");
   const [repRole, setRepRole] = useState<Role>("member");
   const [repMsg, setRepMsg] = useState<string | null>(null);
+  // Shareable invite for the most recent invite (created or regenerated). The manager sends
+  // the key + workspace id to the teammate out-of-band (Slack/Teams) — no email required.
+  const [inviteInfo, setInviteInfo] = useState<{
+    key: string;
+    email: string;
+    slug: string;
+  } | null>(null);
+  const [copied, setCopied] = useState<"key" | "message" | null>(null);
 
   // Plan & usage (billing may be disabled → 404, handled best-effort)
   const [billing, setBilling] = useState<BillingOverview | null>(null);
@@ -326,17 +335,60 @@ export default function AdminPage() {
     await refreshDocs();
   }
 
+  const joinUrl = () =>
+    typeof window !== "undefined"
+      ? `${window.location.origin}/accept-invite`
+      : "/accept-invite";
+
+  function inviteMessage(info: { key: string; email: string; slug: string }) {
+    return (
+      `You're invited to our Sales Assistant workspace.\n\n` +
+      `Go to: ${joinUrl()}\n` +
+      `Workspace identifier: ${info.slug}\n` +
+      `Email: ${info.email}\n` +
+      `Invite key: ${info.key}\n` +
+      `(then choose a password to finish.)`
+    );
+  }
+
+  async function copyText(text: string, which: "key" | "message") {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+    } catch {
+      /* clipboard blocked — values are shown for manual copy */
+    }
+  }
+
   async function onInvite(e: React.FormEvent) {
     e.preventDefault();
     setRepMsg(null);
+    setInviteInfo(null);
+    setCopied(null);
     try {
-      await createInvitation(repEmail.trim(), repRole);
+      const inv = await createInvitation(repEmail.trim(), repRole);
       setRepEmail("");
       setRepRole("member");
-      setRepMsg("Invitation emailed.");
+      setRepMsg("Invite created — send your teammate the details below (Slack, Teams, etc.).");
+      const info = { key: inv.invite_key, email: inv.email, slug: inv.tenant_slug };
+      setInviteInfo(info);
+      await copyText(inviteMessage(info), "message");
       setInvitations(await listInvitations());
     } catch (err) {
-      setRepMsg(err instanceof Error ? err.message : "Could not send invitation");
+      setRepMsg(err instanceof Error ? err.message : "Could not create invitation");
+    }
+  }
+
+  async function onRegenerateKey(id: string) {
+    setCopied(null);
+    try {
+      const inv = await regenerateInvitationLink(id);
+      setRepMsg("Fresh invite key generated — the previous key is now invalid.");
+      const info = { key: inv.invite_key, email: inv.email, slug: inv.tenant_slug };
+      setInviteInfo(info);
+      await copyText(inviteMessage(info), "message");
+    } catch (err) {
+      setRepMsg(err instanceof Error ? err.message : "Could not generate key");
     }
   }
 
@@ -687,7 +739,9 @@ export default function AdminPage() {
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Reps</h2>
         <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
-          Invite a teammate by email. They’ll get a link to set their own password.
+          Invite a teammate, then send them the generated <strong>invite key</strong> and
+          workspace identifier (Slack, Teams, etc.). They join at the join page with their
+          email, the key, and a password they choose — no email required.
         </p>
         <form onSubmit={onInvite}>
           <label htmlFor="email">Email</label>
@@ -710,10 +764,67 @@ export default function AdminPage() {
             <option value="admin">Manager</option>
           </select>
           <button type="submit" disabled={!repEmail.trim()}>
-            Send invitation
+            Create invite
           </button>
           {repMsg && <p className="muted" style={{ marginTop: 12 }}>{repMsg}</p>}
         </form>
+
+        {inviteInfo && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              background: "var(--bg)",
+            }}
+          >
+            <label style={{ fontSize: "0.8rem" }}>Send your teammate these details</label>
+            <ul style={{ margin: "6px 0", paddingLeft: 18, fontSize: "0.85rem" }}>
+              <li>
+                Join page: <span style={{ fontFamily: "monospace" }}>{joinUrl()}</span>
+              </li>
+              <li>
+                Workspace identifier:{" "}
+                <strong style={{ fontFamily: "monospace" }}>{inviteInfo.slug}</strong>
+              </li>
+              <li>
+                Email: <strong>{inviteInfo.email}</strong>
+              </li>
+              <li>
+                Invite key:{" "}
+                <strong style={{ fontFamily: "monospace", fontSize: "0.95rem" }}>
+                  {inviteInfo.key}
+                </strong>
+              </li>
+            </ul>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => copyText(inviteInfo.key, "key")}
+                style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.8rem" }}
+              >
+                Copy key
+              </button>
+              <button
+                type="button"
+                onClick={() => copyText(inviteMessage(inviteInfo), "message")}
+                style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.8rem" }}
+              >
+                Copy full message
+              </button>
+              {copied && (
+                <span className="muted" style={{ alignSelf: "center", fontSize: "0.8rem" }}>
+                  {copied === "key" ? "Key copied ✓" : "Message copied ✓"}
+                </span>
+              )}
+            </div>
+            <p className="muted" style={{ fontSize: "0.75rem", margin: "8px 0 0" }}>
+              Single-use and expires soon. The key is shown only once — regenerate it from
+              the pending list if it&apos;s lost.
+            </p>
+          </div>
+        )}
 
         {invitations.length > 0 && (
           <>
@@ -727,6 +838,12 @@ export default function AdminPage() {
                       <span className="badge">{isManager(inv.role) ? "manager" : "AE"}</span>
                     </td>
                     <td style={{ textAlign: "right" }}>
+                      <button
+                        onClick={() => onRegenerateKey(inv.id)}
+                        style={{ marginTop: 0, marginRight: 8, padding: "2px 10px", fontSize: "0.8rem" }}
+                      >
+                        New key
+                      </button>
                       <button
                         onClick={() => onRevokeInvite(inv.id)}
                         style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.8rem" }}

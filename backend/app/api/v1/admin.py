@@ -6,6 +6,7 @@ touch another tenant's users or groups. All mutations are audited.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -31,7 +32,7 @@ from app.schemas.acl import (
     GroupRead,
 )
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreated, ApiKeyRead
-from app.schemas.invitation import InvitationCreate, InvitationRead
+from app.schemas.invitation import InvitationCreate, InvitationCreated, InvitationRead
 from app.schemas.templates import (
     TemplateApplyRequest,
     TemplateApplyResponse,
@@ -63,6 +64,23 @@ enterprise_router = APIRouter(
 )
 
 _admin = require_role(UserRole.OWNER, UserRole.ADMIN)
+
+logger = logging.getLogger(__name__)
+
+
+def _invitation_created(
+    invitation: Invitation, invite_key: str, tenant_slug: str
+) -> InvitationCreated:
+    return InvitationCreated(
+        id=invitation.id,
+        email=invitation.email,
+        role=invitation.role,
+        status=invitation.status,
+        expires_at=invitation.expires_at,
+        created_at=invitation.created_at,
+        invite_key=invite_key,
+        tenant_slug=tenant_slug,
+    )
 
 
 # ── Users ──────────────────────────────────────────────────────────────────────────
@@ -191,15 +209,44 @@ async def list_invitations(
     return await invitation_service.list_pending(db, current.tenant_id)
 
 
-@router.post("/invitations", response_model=InvitationRead, status_code=status.HTTP_201_CREATED)
+async def _try_send_invite_email(
+    invitation: Invitation, invite_key: str, tenant: Tenant | None
+) -> None:
+    """Best-effort: email the invite key + join instructions if a sender is configured.
+    Never fails the request — invites work without email since the key is returned to the
+    manager to share out-of-band."""
+    tenant_name = tenant.name if tenant is not None else "your team"
+    tenant_slug = tenant.slug if tenant is not None else ""
+    try:
+        await get_email_sender().send(
+            email_templates.invite_email(
+                invitation.email,
+                invite_key=invite_key,
+                tenant_slug=tenant_slug,
+                tenant_name=tenant_name,
+                role=invitation.role.value,
+            )
+        )
+    except Exception:  # noqa: BLE001 - email is optional; the key is shared out-of-band
+        logger.warning(
+            "Invite email send failed for %s; share the invite key manually.",
+            invitation.email,
+            exc_info=True,
+        )
+
+
+@router.post(
+    "/invitations", response_model=InvitationCreated, status_code=status.HTTP_201_CREATED
+)
 async def create_invitation(
     body: InvitationCreate,
     request: Request,
     current: CurrentUser = Depends(_admin),
     db: AsyncSession = Depends(get_db),
-) -> Invitation:
-    """Invite a teammate by email. Seat-limited; emails a single-use accept link."""
-    invitation, raw_token = await invitation_service.create_invitation(
+) -> InvitationCreated:
+    """Invite a teammate. Seat-limited. Returns a single-use invite key the manager shares
+    out-of-band (Slack/Teams); best-effort emails it too if a mail provider is configured."""
+    invitation, invite_key = await invitation_service.create_invitation(
         db,
         tenant_id=current.tenant_id,
         inviter_id=current.id,
@@ -207,12 +254,7 @@ async def create_invitation(
         role=body.role,
     )
     tenant = await db.get(Tenant, current.tenant_id)
-    tenant_name = tenant.name if tenant is not None else "your team"
-    await get_email_sender().send(
-        email_templates.invite_email(
-            invitation.email, token=raw_token, tenant_name=tenant_name, role=invitation.role.value
-        )
-    )
+    await _try_send_invite_email(invitation, invite_key, tenant)
     await audit_service.write_event(
         db,
         tenant_id=current.tenant_id,
@@ -224,7 +266,34 @@ async def create_invitation(
         ip_address=client_ip(request),
         outcome="allow",
     )
-    return invitation
+    return _invitation_created(invitation, invite_key, tenant.slug if tenant else "")
+
+
+@router.post("/invitations/{invitation_id}/link", response_model=InvitationCreated)
+async def regenerate_invitation_link(
+    invitation_id: uuid.UUID,
+    request: Request,
+    current: CurrentUser = Depends(_admin),
+    db: AsyncSession = Depends(get_db),
+) -> InvitationCreated:
+    """Mint a fresh invite key for a pending invite so the manager can re-share it (the
+    previous key stops working). Use when the key was lost or never delivered."""
+    invitation, invite_key = await invitation_service.regenerate_token(
+        db, tenant_id=current.tenant_id, invitation_id=invitation_id
+    )
+    tenant = await db.get(Tenant, current.tenant_id)
+    await audit_service.write_event(
+        db,
+        tenant_id=current.tenant_id,
+        action=AuditAction.USER_INVITED,
+        actor_user_id=current.id,
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+        metadata={"email": invitation.email, "regenerated_key": True},
+        ip_address=client_ip(request),
+        outcome="allow",
+    )
+    return _invitation_created(invitation, invite_key, tenant.slug if tenant else "")
 
 
 @router.delete("/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)

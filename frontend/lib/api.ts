@@ -591,10 +591,20 @@ export interface AcceptInviteResponse {
   token_type: string;
 }
 
-export async function acceptInvite(token: string, password: string): Promise<void> {
+export async function acceptInvite(
+  tenantSlug: string,
+  email: string,
+  inviteKey: string,
+  password: string,
+): Promise<void> {
   const data = await request<AcceptInviteResponse>("/auth/accept-invite", {
     method: "POST",
-    body: JSON.stringify({ token, password }),
+    body: JSON.stringify({
+      tenant_slug: tenantSlug,
+      email,
+      invite_key: inviteKey,
+      password,
+    }),
   });
   setToken(data.access_token);
 }
@@ -609,15 +619,30 @@ export interface Invitation {
   created_at: string;
 }
 
+// Create/regenerate responses include the one-time invite key (shared out-of-band) plus
+// the workspace identifier the teammate needs to join.
+export interface InvitationCreated extends Invitation {
+  invite_key: string;
+  tenant_slug: string;
+}
+
 export async function listInvitations(): Promise<Invitation[]> {
   return request<Invitation[]>("/admin/invitations");
 }
 
-export async function createInvitation(email: string, role: Role = "member"): Promise<Invitation> {
-  return request<Invitation>("/admin/invitations", {
+export async function createInvitation(
+  email: string,
+  role: Role = "member",
+): Promise<InvitationCreated> {
+  return request<InvitationCreated>("/admin/invitations", {
     method: "POST",
     body: JSON.stringify({ email, role }),
   });
+}
+
+// Mint a fresh accept link for a pending invite (re-share without email).
+export async function regenerateInvitationLink(id: string): Promise<InvitationCreated> {
+  return request<InvitationCreated>(`/admin/invitations/${id}/link`, { method: "POST" });
 }
 
 export async function revokeInvitation(id: string): Promise<void> {

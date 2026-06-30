@@ -1,10 +1,9 @@
-"""Invitation flow: invite emails a link, accept creates an active user, edge cases, gating."""
+"""Invitation flow: invite returns a key, accept (slug+email+key) creates a user, gating."""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from urllib.parse import parse_qs, urlparse
 
 import pytest
 from app.core.security import create_access_token, hash_password
@@ -25,10 +24,21 @@ def outbox() -> Iterator[FakeEmailSender]:
     sender.set_email_sender(None)
 
 
-def _token_from_outbox(fake: FakeEmailSender) -> str:
-    assert fake.outbox, "expected an email to have been sent"
-    link = next(line for line in fake.outbox[-1].text.splitlines() if "accept-invite" in line)
-    return parse_qs(urlparse(link.strip()).query)["token"][0]
+ACME_SLUG = "acme-legal"  # the slug the `acme` fixture registers
+
+
+async def _accept(client, slug: str, email: str, key: str, password: str):
+    return await client.post(
+        "/auth/accept-invite",
+        json={"tenant_slug": slug, "email": email, "invite_key": key, "password": password},
+    )
+
+
+class _FailingEmailSender:
+    """Simulates an unconfigured/broken mail provider."""
+
+    async def send(self, msg: object) -> None:  # noqa: ANN401 - test double
+        raise RuntimeError("smtp down")
 
 
 async def _member_headers(session_factory, tenant_id: uuid.UUID) -> dict:
@@ -45,13 +55,14 @@ async def _member_headers(session_factory, tenant_id: uuid.UUID) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_invite_then_accept_creates_active_user(client, acme, outbox, db_session) -> None:
+async def test_invite_then_accept_creates_active_user(client, acme, db_session) -> None:
     h = acme["headers"]
     r = await client.post("/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=h)
     assert r.status_code == 201, r.text
-    token = _token_from_outbox(outbox)
+    key = r.json()["invite_key"]
+    assert r.json()["tenant_slug"] == ACME_SLUG
 
-    acc = await client.post("/auth/accept-invite", json={"token": token, "password": "brand-new-password-1"})
+    acc = await _accept(client, ACME_SLUG, "rep@acme.com", key, "brand-new-password-1")
     assert acc.status_code == 201, acc.text
     body = acc.json()
     assert body["tenant_id"] == acme["tenant_id"]
@@ -67,19 +78,107 @@ async def test_invite_then_accept_creates_active_user(client, acme, outbox, db_s
 
 
 @pytest.mark.asyncio
-async def test_accept_is_single_use(client, acme, outbox) -> None:
+async def test_create_returns_shareable_key(client, acme) -> None:
+    # The invite key is returned directly (no email needed) and accepting with it works.
+    r = await client.post(
+        "/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=acme["headers"]
+    )
+    assert r.status_code == 201, r.text
+    key = r.json()["invite_key"]
+    assert "-" in key  # human-readable grouped key
+    acc = await _accept(client, ACME_SLUG, "rep@acme.com", key, "brand-new-password-1")
+    assert acc.status_code == 201, acc.text
+
+
+@pytest.mark.asyncio
+async def test_key_is_normalized_on_accept(client, acme) -> None:
+    # Dashes/case/whitespace don't matter — the key is normalized before verifying.
+    r = await client.post(
+        "/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=acme["headers"]
+    )
+    key = r.json()["invite_key"]
+    messy = f"  {key.replace('-', '').lower()} "
+    acc = await _accept(client, ACME_SLUG, "rep@acme.com", messy, "brand-new-password-1")
+    assert acc.status_code == 201, acc.text
+
+
+@pytest.mark.asyncio
+async def test_wrong_key_rejected(client, acme) -> None:
+    await client.post(
+        "/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=acme["headers"]
+    )
+    acc = await _accept(client, ACME_SLUG, "rep@acme.com", "WRONG-KEY22-WRONG-KEY22", "password-1234567")
+    assert acc.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_regenerate_key_invalidates_old_one(client, acme) -> None:
+    r = await client.post(
+        "/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=acme["headers"]
+    )
+    inv_id = r.json()["id"]
+    old_key = r.json()["invite_key"]
+
+    regen = await client.post(f"/admin/invitations/{inv_id}/link", headers=acme["headers"])
+    assert regen.status_code == 200, regen.text
+    new_key = regen.json()["invite_key"]
+    assert new_key != old_key
+
+    # Old key no longer works; the freshly minted one does.
+    stale = await _accept(client, ACME_SLUG, "rep@acme.com", old_key, "password-old-1234")
+    assert stale.status_code == 400
+    ok = await _accept(client, ACME_SLUG, "rep@acme.com", new_key, "password-new-1234")
+    assert ok.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_invite_succeeds_when_email_fails(client, acme) -> None:
+    # A broken/unconfigured mail provider must not break invites — the key is still returned.
+    sender.set_email_sender(_FailingEmailSender())
+    try:
+        r = await client.post(
+            "/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=acme["headers"]
+        )
+        assert r.status_code == 201, r.text
+        key = r.json()["invite_key"]
+        acc = await _accept(client, ACME_SLUG, "rep@acme.com", key, "brand-new-password-1")
+        assert acc.status_code == 201
+    finally:
+        sender.set_email_sender(None)
+
+
+@pytest.mark.asyncio
+async def test_regenerate_link_requires_manager(client, acme, session_factory) -> None:
+    r = await client.post(
+        "/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=acme["headers"]
+    )
+    inv_id = r.json()["id"]
+    ae = await _member_headers(session_factory, uuid.UUID(acme["tenant_id"]))
+    denied = await client.post(f"/admin/invitations/{inv_id}/link", headers=ae)
+    assert denied.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_accept_is_single_use(client, acme) -> None:
     h = acme["headers"]
-    await client.post("/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=h)
-    token = _token_from_outbox(outbox)
-    first = await client.post("/auth/accept-invite", json={"token": token, "password": "brand-new-password-1"})
+    r = await client.post("/admin/invitations", json={"email": "rep@acme.com", "role": "member"}, headers=h)
+    key = r.json()["invite_key"]
+    first = await _accept(client, ACME_SLUG, "rep@acme.com", key, "brand-new-password-1")
     assert first.status_code == 201
-    again = await client.post("/auth/accept-invite", json={"token": token, "password": "another-password-99"})
+    again = await _accept(client, ACME_SLUG, "rep@acme.com", key, "another-password-99")
     assert again.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_accept_garbage_token_400(client, acme) -> None:
-    r = await client.post("/auth/accept-invite", json={"token": "not-a-real-token", "password": "password-1234567"})
+async def test_accept_unknown_invite_400(client, acme) -> None:
+    # Valid-looking workspace but no pending invite for this email → generic 400.
+    r = await _accept(client, ACME_SLUG, "nobody@acme.com", "ABCDE-FGHJK-LMNPQ-RSTUV", "password-1234567")
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_accept_unknown_workspace_400(client, acme) -> None:
+    r = await _accept(client, "no-such-workspace", "rep@acme.com", "ABCDE-FGHJK-LMNPQ-RSTUV", "password-1234567")
     assert r.status_code == 400
 
 
