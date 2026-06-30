@@ -52,7 +52,7 @@ export default function SignupPage() {
           value={tenantSlug}
           onChange={(e) => setTenantSlug(e.target.value.toLowerCase())}
           placeholder="acme"
-          pattern="[a-z0-9][a-z0-9-]*"
+          pattern="[a-z0-9][-a-z0-9]*"
           autoComplete="organization"
           helper="Lowercase letters, numbers, and hyphens. Your team uses this to sign in."
           required

@@ -52,7 +52,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     let detail = `Request failed (${res.status})`;
     try {
       const body = await res.json();
-      if (body?.detail) detail = body.detail;
+      const d = body?.detail;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (Array.isArray(d)) {
+        // FastAPI validation errors: [{loc, msg, type}, …] — surface the messages.
+        detail = d.map((e) => e?.msg ?? String(e)).join("; ");
+      } else if (d) {
+        detail = JSON.stringify(d);
+      }
     } catch {
       /* non-JSON error body */
     }

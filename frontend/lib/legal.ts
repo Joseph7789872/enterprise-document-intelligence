@@ -3,7 +3,7 @@
 
 export const LEGAL = {
   product: "Sales Assistant",
-  company: "[COMPANY LEGAL NAME]",
+  company: "Sales Assistant",
   jurisdiction: "[JURISDICTION]",
   contact: "legal@[yourdomain]",
   effectiveDate: "[EFFECTIVE DATE]",
