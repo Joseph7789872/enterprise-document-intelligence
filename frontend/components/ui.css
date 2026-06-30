@@ -874,3 +874,126 @@
   font-size: var(--text-xs);
   color: var(--color-muted-foreground);
 }
+
+/* ----------------------------------------------------------------------------
+   Manager surfaces (/admin, /analytics, /billing)
+   ---------------------------------------------------------------------------- */
+.section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.form-row {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.field-inline {
+  width: auto;
+  min-width: 240px;
+  margin: 0;
+}
+
+/* compact list rows (ramp topics, objections, plan rows) */
+.list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+.list-row__main {
+  min-width: 0;
+}
+.list-row__title {
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.inset {
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* segment toggle pill (checkbox inside a chip) */
+.seg-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.seg-toggle input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+/* stat-card grid (analytics) */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-md);
+}
+@media (min-width: 720px) {
+  .stat-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* horizontal mini-bar (analytics tables) */
+.minibar {
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  height: 8px;
+  width: 100%;
+  overflow: hidden;
+}
+.minibar__fill {
+  background: var(--color-accent);
+  height: 100%;
+  border-radius: var(--radius-pill);
+}
+
+/* vertical volume chart (analytics) */
+.volume {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 88px;
+}
+.volume__bar {
+  flex: 1;
+  min-width: 2px;
+  background: color-mix(in srgb, var(--color-accent) 80%, transparent);
+  border-radius: 2px 2px 0 0;
+  transition: background var(--dur) var(--ease);
+}
+.volume__bar:hover {
+  background: var(--color-accent);
+}
+
+/* plan comparison rows (billing) */
+.plan-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.plan-row--current {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}

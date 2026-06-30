@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   type AnalyticsOverview,
+  type CurrentUser,
   type LowConfidenceItem,
   exportAnalyticsCsv,
   getAnalyticsOverview,
@@ -13,6 +13,20 @@ import {
   getToken,
   isManager,
 } from "@/lib/api";
+import {
+  AppShell,
+  Badge,
+  Banner,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  StatCard,
+  Table,
+  Tabs,
+  Td,
+  Th,
+} from "@/components";
 
 const RANGES = [7, 30, 90];
 
@@ -20,38 +34,18 @@ function pct(n: number | null): string {
   return n == null ? "—" : `${Math.round(n * 100)}%`;
 }
 
-function Bar({ value, max }: { value: number; max: number }) {
+function MiniBar({ value, max }: { value: number; max: number }) {
   const width = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
-    <div style={{ background: "var(--border)", borderRadius: 4, height: 8, width: "100%" }}>
-      <div
-        style={{ background: "var(--accent)", borderRadius: 4, height: 8, width: `${width}%` }}
-      />
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: 120,
-        border: "1px solid var(--border)",
-        borderRadius: 10,
-        padding: "12px 16px",
-      }}
-    >
-      <div style={{ fontSize: "1.6rem", fontWeight: 600 }}>{value}</div>
-      <div className="muted" style={{ fontSize: "0.8rem" }}>
-        {label}
-      </div>
+    <div className="minibar">
+      <div className="minibar__fill" style={{ width: `${width}%` }} />
     </div>
   );
 }
 
 export default function AnalyticsPage() {
   const router = useRouter();
+  const [user, setUser] = useState<CurrentUser | null>(null);
   const [denied, setDenied] = useState(false);
   const [ready, setReady] = useState(false);
   const [days, setDays] = useState(30);
@@ -76,6 +70,7 @@ export default function AnalyticsPage() {
     }
     getMe()
       .then((u) => {
+        setUser(u);
         if (!isManager(u.role)) setDenied(true);
         else void load(days);
       })
@@ -104,118 +99,116 @@ export default function AnalyticsPage() {
 
   if (denied) {
     return (
-      <main>
-        <h1>Analytics</h1>
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>
-            This area is for managers only. <Link href="/app">Go to the chat →</Link>
-          </p>
-        </div>
-      </main>
+      <AppShell user={user}>
+        <header className="page-head">
+          <h1 className="page-head__title">Analytics</h1>
+        </header>
+        <EmptyState
+          title="Managers only"
+          description="This area is for managers. Head to Ask to query your playbooks."
+        />
+      </AppShell>
     );
   }
 
   const maxRep = Math.max(1, ...(data?.rep_activity.map((r) => r.query_count) ?? [1]));
   const maxTrend = Math.max(1, ...(data?.query_trend.map((t) => t.count) ?? [1]));
-  const maxCited = Math.max(1, ...(data?.content_insights.most_cited.map((c) => c.citation_count) ?? [1]));
+  const maxCited = Math.max(
+    1,
+    ...(data?.content_insights.most_cited.map((c) => c.citation_count) ?? [1]),
+  );
   const q = data?.answer_quality;
 
   return (
-    <main>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Team analytics</h1>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Link href="/admin" className="muted" style={{ fontSize: "0.9rem" }}>
-            ← Admin
-          </Link>
-          <button onClick={() => void exportAnalyticsCsv(days)} style={{ marginTop: 0 }}>
+    <AppShell user={user} wide>
+      <header className="page-head">
+        <div className="page-head__row">
+          <div>
+            <h1 className="page-head__title">Team analytics</h1>
+            <p className="page-head__sub">
+              Adoption, answer quality, and content coverage across your team.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={() => void exportAnalyticsCsv(days)}>
             Export CSV
-          </button>
+          </Button>
         </div>
+      </header>
+
+      <div style={{ margin: "var(--space-lg) 0" }}>
+        <Tabs
+          aria-label="Date range"
+          value={String(days)}
+          onChange={(v) => void changeRange(Number(v))}
+          items={RANGES.map((d) => ({ value: String(d), label: `Last ${d} days` }))}
+        />
       </div>
 
-      <div className="tabs" style={{ marginBottom: 16 }}>
-        {RANGES.map((d) => (
-          <button
-            key={d}
-            className={`tab${days === d ? " active" : ""}`}
-            onClick={() => void changeRange(d)}
-          >
-            Last {d} days
-          </button>
-        ))}
-      </div>
-
-      {error && <p className="error">{error}</p>}
+      {error && <Banner tone="error">{error}</Banner>}
       {!data && !error && <p className="muted">Loading…</p>}
 
       {data && q && (
-        <>
+        <div className="section-stack">
           {/* Stat cards */}
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-            <Stat label="Total queries" value={data.total_queries} />
-            <Stat label="Active reps" value={data.active_reps} />
-            <Stat label="Avg confidence" value={pct(q.avg_confidence)} />
-            <Stat label="Citation coverage" value={`${q.citation_coverage_pct}%`} />
+          <div className="stat-grid">
+            <StatCard label="Total queries" value={data.total_queries} />
+            <StatCard label="Active reps" value={data.active_reps} />
+            <StatCard label="Avg confidence" value={pct(q.avg_confidence)} />
+            <StatCard label="Citation coverage" value={`${q.citation_coverage_pct}%`} />
           </div>
 
           {/* Rep activity */}
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Rep activity</h2>
+          <Card>
+            <CardHeader title="Rep activity" />
             {data.rep_activity.length === 0 ? (
               <p className="muted" style={{ margin: 0 }}>No reps yet.</p>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <Table>
                 <tbody>
                   {data.rep_activity.map((r) => (
-                    <tr key={r.user_id} style={{ borderTop: "1px solid var(--border)" }}>
-                      <td style={{ padding: "8px 8px 8px 0", whiteSpace: "nowrap" }}>
-                        {r.email}{" "}
-                        {!r.active && <span className="badge">inactive</span>}
-                      </td>
-                      <td style={{ width: "40%", padding: "8px 0" }}>
-                        <Bar value={r.query_count} max={maxRep} />
-                      </td>
-                      <td style={{ textAlign: "right", padding: "8px 0", whiteSpace: "nowrap" }}>
-                        {r.query_count} queries
-                      </td>
-                      <td className="muted" style={{ textAlign: "right", padding: "8px 0 8px 12px", whiteSpace: "nowrap" }}>
+                    <tr key={r.user_id}>
+                      <Td>
+                        {r.email} {!r.active && <Badge>inactive</Badge>}
+                      </Td>
+                      <Td style={{ width: "40%" }}>
+                        <MiniBar value={r.query_count} max={maxRep} />
+                      </Td>
+                      <Td numeric>{r.query_count} queries</Td>
+                      <Td numeric className="muted">
                         {r.avg_confidence != null ? `${pct(r.avg_confidence)} conf` : "—"}
-                      </td>
+                      </Td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
-          </div>
+          </Card>
 
           {/* Query trend */}
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Query volume</h2>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 80 }}>
+          <Card>
+            <CardHeader title="Query volume" />
+            <div className="volume">
               {data.query_trend.map((t) => (
                 <div
                   key={t.date}
+                  className="volume__bar"
                   title={`${t.date}: ${t.count}`}
                   style={{
-                    flex: 1,
-                    background: "var(--accent)",
-                    borderRadius: "2px 2px 0 0",
                     height: `${Math.max(2, Math.round((t.count / maxTrend) * 100))}%`,
-                    minWidth: 2,
                   }}
                 />
               ))}
             </div>
-            <p className="muted" style={{ fontSize: "0.8rem", marginBottom: 0 }}>
-              {data.query_trend[0]?.date} → {data.query_trend[data.query_trend.length - 1]?.date}
+            <p className="muted" style={{ fontSize: "var(--text-xs)", marginBottom: 0 }}>
+              {data.query_trend[0]?.date} →{" "}
+              {data.query_trend[data.query_trend.length - 1]?.date}
             </p>
-          </div>
+          </Card>
 
           {/* Answer quality */}
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Answer quality</h2>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.95rem" }}>
+          <Card>
+            <CardHeader title="Answer quality" />
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9 }}>
               <li>Average confidence: {pct(q.avg_confidence)}</li>
               <li>
                 Low-confidence answers: {q.low_confidence}
@@ -223,81 +216,101 @@ export default function AnalyticsPage() {
               </li>
               <li>Held for approval: {q.pending_approval} · Rejected: {q.rejected}</li>
               <li>
-                Grounded in citations: {q.with_citations} / {q.total} ({q.citation_coverage_pct}%)
+                Grounded in citations: {q.with_citations} / {q.total} (
+                {q.citation_coverage_pct}%)
               </li>
             </ul>
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: "var(--space-md)" }}>
               {lowConf === null ? (
-                <button onClick={showLowConfidence} disabled={lowConfBusy} style={{ marginTop: 0 }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={showLowConfidence}
+                  loading={lowConfBusy}
+                >
                   {lowConfBusy ? "Loading…" : "Show recent low-confidence questions"}
-                </button>
+                </Button>
               ) : lowConf.length === 0 ? (
-                <p className="muted" style={{ margin: 0 }}>No low-confidence questions in this range.</p>
+                <p className="muted" style={{ margin: 0 }}>
+                  No low-confidence questions in this range.
+                </p>
               ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <Table>
                   <tbody>
                     {lowConf.map((it) => (
-                      <tr key={it.query_id} style={{ borderTop: "1px solid var(--border)", fontSize: "0.9rem" }}>
-                        <td style={{ padding: "6px 0" }}>{it.question}</td>
-                        <td className="muted" style={{ textAlign: "right", whiteSpace: "nowrap", padding: "6px 0 6px 12px" }}>
+                      <tr key={it.query_id}>
+                        <Td>{it.question}</Td>
+                        <Td numeric className="muted">
                           {it.user_email} · {pct(it.confidence)}
-                        </td>
+                        </Td>
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </Table>
               )}
             </div>
-          </div>
+          </Card>
 
           {/* Content insights */}
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Content insights</h2>
-            <h3 style={{ fontSize: "0.95rem", marginBottom: 4 }}>Most-cited documents</h3>
+          <Card>
+            <CardHeader title="Content insights" />
+            <h3 style={{ fontSize: "var(--text-base)", marginBottom: "var(--space-xs)" }}>
+              Most-cited documents
+            </h3>
             {data.content_insights.most_cited.length === 0 ? (
               <p className="muted" style={{ marginTop: 0 }}>No citations yet in this range.</p>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+              <Table>
                 <tbody>
                   {data.content_insights.most_cited.map((c) => (
-                    <tr key={c.document_id} style={{ borderTop: "1px solid var(--border)" }}>
-                      <td style={{ padding: "6px 8px 6px 0", whiteSpace: "nowrap" }}>{c.filename}</td>
-                      <td style={{ width: "45%", padding: "6px 0" }}>
-                        <Bar value={c.citation_count} max={maxCited} />
-                      </td>
-                      <td className="muted" style={{ textAlign: "right", padding: "6px 0", whiteSpace: "nowrap" }}>
-                        {c.citation_count} cites
-                      </td>
+                    <tr key={c.document_id}>
+                      <Td>{c.filename}</Td>
+                      <Td style={{ width: "45%" }}>
+                        <MiniBar value={c.citation_count} max={maxCited} />
+                      </Td>
+                      <Td numeric className="muted">{c.citation_count} cites</Td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
 
-            <h3 style={{ fontSize: "0.95rem", marginBottom: 4 }}>
+            <h3
+              style={{
+                fontSize: "var(--text-base)",
+                margin: "var(--space-lg) 0 var(--space-xs)",
+              }}
+            >
               Coverage gaps (uploaded, never cited)
             </h3>
             {data.content_insights.uncited_documents.length === 0 ? (
-              <p className="muted" style={{ marginTop: 0 }}>Every document has been cited. 🎉</p>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Every document has been cited.
+              </p>
             ) : (
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.9rem" }}>
+              <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9 }}>
                 {data.content_insights.uncited_documents.map((d) => (
                   <li key={d.document_id} className="muted">
-                    {d.filename} <span className="badge">{d.content_type}</span>
+                    {d.filename} <Badge>{d.content_type}</Badge>
                   </li>
                 ))}
               </ul>
             )}
 
             {data.content_insights.uploads_by_type.length > 0 && (
-              <p className="muted" style={{ fontSize: "0.85rem", marginBottom: 0, marginTop: 12 }}>
+              <p
+                className="muted"
+                style={{ fontSize: "var(--text-sm)", margin: "var(--space-md) 0 0" }}
+              >
                 Uploads this range:{" "}
-                {data.content_insights.uploads_by_type.map((u) => `${u.content_type} (${u.count})`).join(", ")}
+                {data.content_insights.uploads_by_type
+                  .map((u) => `${u.content_type} (${u.count})`)
+                  .join(", ")}
               </p>
             )}
-          </div>
-        </>
+          </Card>
+        </div>
       )}
-    </main>
+    </AppShell>
   );
 }

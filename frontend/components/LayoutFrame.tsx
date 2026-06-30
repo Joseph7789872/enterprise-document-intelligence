@@ -6,7 +6,7 @@ import { SiteFooter } from "./SiteFooter";
 // Routes that render their own chrome (full-width AppHeader + their own
 // container via AppShell) and therefore opt out of the global container/footer.
 // This list grows as each app surface is migrated to the new component system.
-const SELF_MANAGED = ["/app", "/ramp", "/log"];
+const SELF_MANAGED = ["/app", "/ramp", "/log", "/admin", "/analytics", "/billing"];
 
 /**
  * Wraps page content. Self-managed app routes are rendered bare (they bring
