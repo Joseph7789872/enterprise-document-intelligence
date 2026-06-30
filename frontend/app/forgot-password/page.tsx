@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { forgotPassword } from "@/lib/api";
+import { AuthShell, Button, Input, Banner } from "@/components";
 
 export default function ForgotPasswordPage() {
   const [tenantSlug, setTenantSlug] = useState("");
@@ -26,46 +27,48 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main>
-      <h1>Reset your password</h1>
+    <AuthShell
+      title="Reset your password"
+      subtitle={sent ? undefined : "Enter your workspace and email and we'll send a reset link."}
+      footer={
+        <p>
+          <Link href="/login">Back to sign in</Link>
+        </p>
+      }
+    >
       {sent ? (
-        <div className="card">
-          <p>If an account exists for that email, we’ve sent a reset link. Check your inbox.</p>
-          <p className="muted">
-            <Link href="/login">Back to sign in</Link>
-          </p>
-        </div>
+        <Banner tone="success">
+          If an account exists for that email, we&apos;ve sent a reset link. Check your
+          inbox.
+        </Banner>
       ) : (
-        <form className="card" onSubmit={onSubmit}>
-          <p className="muted">Enter your workspace and email and we’ll send a reset link.</p>
-          <label htmlFor="tenant">Workspace identifier</label>
-          <input
-            id="tenant"
-            type="text"
+        <form onSubmit={onSubmit}>
+          <Input
+            label="Workspace identifier"
             value={tenantSlug}
             onChange={(e) => setTenantSlug(e.target.value.toLowerCase())}
             placeholder="acme"
             autoComplete="organization"
             required
           />
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
+          <Input
+            label="Email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="username"
             required
           />
-          <button type="submit" disabled={busy}>
+          <Button type="submit" block loading={busy} className="auth__actions">
             {busy ? "Sending…" : "Send reset link"}
-          </button>
-          {error && <p className="error">{error}</p>}
-          <p className="muted" style={{ marginTop: 12 }}>
-            <Link href="/login">Back to sign in</Link>
-          </p>
+          </Button>
+          {error && (
+            <Banner tone="error" style={{ marginTop: "var(--space-md)" }}>
+              {error}
+            </Banner>
+          )}
         </form>
       )}
-    </main>
+    </AuthShell>
   );
 }

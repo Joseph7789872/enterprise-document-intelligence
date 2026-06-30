@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { resetPassword } from "@/lib/api";
+import { AuthShell, Button, Input, Banner } from "@/components";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -34,34 +35,51 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main>
-      <h1>Choose a new password</h1>
+    <AuthShell
+      title="Choose a new password"
+      footer={
+        <p>
+          <Link href="/login">{done ? "Sign in now" : "Back to sign in"}</Link>
+        </p>
+      }
+    >
       {done ? (
-        <div className="card">
-          <p>Your password has been reset. Redirecting to sign in…</p>
-          <p className="muted">
-            <Link href="/login">Sign in now</Link>
-          </p>
-        </div>
+        <Banner tone="success">
+          Your password has been reset. Redirecting to sign in…
+        </Banner>
       ) : (
-        <form className="card" onSubmit={onSubmit}>
-          {!token && <p className="error">Missing reset token. Use the link from your email.</p>}
-          <label htmlFor="password">New password (12+ characters)</label>
-          <input
-            id="password"
+        <form onSubmit={onSubmit}>
+          {!token && (
+            <Banner tone="warn" style={{ marginBottom: "var(--space-md)" }}>
+              Missing reset token. Use the link from your email.
+            </Banner>
+          )}
+          <Input
+            label="New password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
             minLength={12}
+            helper="At least 12 characters."
             required
           />
-          <button type="submit" disabled={busy || !token}>
+          <Button
+            type="submit"
+            block
+            loading={busy}
+            disabled={!token}
+            className="auth__actions"
+          >
             {busy ? "Resetting…" : "Reset password"}
-          </button>
-          {error && <p className="error">{error}</p>}
+          </Button>
+          {error && (
+            <Banner tone="error" style={{ marginTop: "var(--space-md)" }}>
+              {error}
+            </Banner>
+          )}
         </form>
       )}
-    </main>
+    </AuthShell>
   );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { acceptInvite } from "@/lib/api";
+import { AuthShell, Button, Input, Banner } from "@/components";
 
 export default function AcceptInvitePage() {
   const router = useRouter();
@@ -38,61 +39,65 @@ export default function AcceptInvitePage() {
   }
 
   return (
-    <main>
-      <h1>Join your team</h1>
-      <p className="muted">
-        Enter your workspace identifier, your email, and the invite key your manager sent
-        you, then choose a password.
-      </p>
-      <form className="card" onSubmit={onSubmit}>
-        <label htmlFor="workspace">Workspace identifier</label>
-        <input
-          id="workspace"
+    <AuthShell
+      title="Join your team"
+      subtitle="Enter your workspace identifier, your email, and the invite key your manager sent you, then choose a password."
+      footer={
+        <p>
+          Already have an account? <Link href="/login">Sign in</Link>
+        </p>
+      }
+    >
+      <form onSubmit={onSubmit}>
+        <Input
+          label="Workspace identifier"
           value={tenantSlug}
           onChange={(e) => setTenantSlug(e.target.value)}
           placeholder="acme"
           autoCapitalize="none"
           required
         />
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
+        <Input
+          label="Email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@yourco.com"
           required
         />
-        <label htmlFor="key">Invite key</label>
-        <input
-          id="key"
+        <Input
+          label="Invite key"
           value={inviteKey}
           onChange={(e) => setInviteKey(e.target.value)}
           placeholder="ABCDE-FGHJK-LMNPQ-RSTUV"
-          style={{ fontFamily: "monospace" }}
+          style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
           required
         />
-        <label htmlFor="password">Choose a password (12+ characters)</label>
-        <input
-          id="password"
+        <Input
+          label="Choose a password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
           minLength={12}
+          helper="At least 12 characters."
           required
         />
-        <button
+        <Button
           type="submit"
-          disabled={busy || !tenantSlug.trim() || !email.trim() || !inviteKey.trim()}
+          block
+          loading={busy}
+          disabled={!tenantSlug.trim() || !email.trim() || !inviteKey.trim()}
+          className="auth__actions"
         >
           {busy ? "Joining…" : "Join workspace"}
-        </button>
-        {error && <p className="error">{error}</p>}
+        </Button>
+        {error && (
+          <Banner tone="error" style={{ marginTop: "var(--space-md)" }}>
+            {error}
+          </Banner>
+        )}
       </form>
-      <p className="muted" style={{ marginTop: 16 }}>
-        Already have an account? <Link href="/login">Sign in</Link>
-      </p>
-    </main>
+    </AuthShell>
   );
 }

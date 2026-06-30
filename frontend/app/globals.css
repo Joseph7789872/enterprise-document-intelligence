@@ -1,13 +1,144 @@
+/* =============================================================================
+   Sales Assistant — Design System foundation
+   Light-first, Swiss-minimal "Trust & Authority" direction.
+   Source of truth: design-system/sales-assistant/MASTER.md
+   Phase 1 (foundation). Backward-compatible: every legacy class below is kept
+   and restyled so existing pages render on the new system until each page is
+   migrated to the shared components in app/components/.
+   ============================================================================= */
+
+/* ----------------------------------------------------------------------------
+   Tokens — Light (default)
+   ---------------------------------------------------------------------------- */
 :root {
-  --bg: #0b0f14;
-  --panel: #141b24;
-  --border: #243240;
-  --text: #e6edf3;
-  --muted: #93a1b1;
-  --accent: #4c8bf5;
-  --accent-hover: #3b78e0;
+  /* Brand / semantic colors */
+  --color-primary: #0f172a; /* navy — primary text, solid buttons, emphasis */
+  --color-on-primary: #ffffff;
+  --color-secondary: #334155;
+  --color-accent: #0369a1; /* blue — CTAs, links, focus */
+  --color-accent-hover: #075985;
+  --color-background: #f8fafc; /* app page background (muted) */
+  --surface: #ffffff; /* cards / panels sit above the bg */
+  --surface-2: #f1f5f9; /* subtle inset surfaces (table headers, code) */
+  --color-foreground: #020617; /* primary text */
+  --color-muted: #e8ecf1;
+  --color-muted-foreground: #64748b; /* secondary text */
+  --color-border: #e2e8f0;
+  --color-ring: #0369a1; /* focus ring */
+
+  /* Status */
+  --color-destructive: #dc2626;
+  --color-destructive-bg: #fef2f2;
+  --color-success: #16a34a;
+  --color-success-bg: #f0fdf4;
+  --color-warning: #b45309;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fcd34d;
+
+  /* Spacing scale (4 / 8 rhythm) */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+
+  /* Radius scale */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.12);
+  --shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.16);
+
+  /* Layout */
+  --container-max: 1080px;
+  --container-narrow: 760px;
+  --header-height: 60px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur: 200ms;
+
+  /* z-index scale */
+  --z-header: 40;
+  --z-dropdown: 50;
+  --z-overlay: 100;
+  --z-modal: 110;
+  --z-toast: 1000;
+
+  /* ---- Legacy aliases (Phase 1 backward-compat) ----
+     The pre-redesign pages reference these old variable names in inline
+     styles. Aliased onto the new semantic tokens so every page renders on the
+     new light-first system before it is individually migrated. Remove an alias
+     once no page references it. */
+  --bg: var(--color-background);
+  --panel: var(--surface);
+  --border: var(--color-border);
+  --text: var(--color-foreground);
+  --muted: var(--color-muted-foreground);
+  --accent: var(--color-accent);
+  --accent-hover: var(--color-accent-hover);
+
+  color-scheme: light;
 }
 
+/* ----------------------------------------------------------------------------
+   Tokens — Dark (opt-in). Desaturated tonal variants, brighter accent.
+   ---------------------------------------------------------------------------- */
+[data-theme="dark"] {
+  --color-primary: #e2e8f0;
+  --color-on-primary: #0b1220;
+  --color-secondary: #94a3b8;
+  --color-accent: #38bdf8;
+  --color-accent-hover: #7dd3fc;
+  --color-background: #0b1220;
+  --surface: #111a2b;
+  --surface-2: #1e293b;
+  --color-foreground: #e6edf3;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-border: #243240;
+  --color-ring: #38bdf8;
+
+  --color-destructive: #f87171;
+  --color-destructive-bg: #2a1416;
+  --color-success: #4ade80;
+  --color-success-bg: #0f2417;
+  --color-warning: #fbbf24;
+  --color-warning-bg: #261c0a;
+  --color-warning-border: #92640f;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------------------------
+   Base / reset
+   ---------------------------------------------------------------------------- */
 * {
   box-sizing: border-box;
 }
@@ -16,171 +147,328 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a {
-  color: var(--accent);
+  color: var(--color-accent);
   text-decoration: none;
+  transition: color var(--dur) var(--ease);
 }
 
-.container {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 48px 24px;
+a:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
 }
 
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 24px;
-  margin-top: 24px;
+h1,
+h2,
+h3,
+h4 {
+  color: var(--color-foreground);
+  line-height: 1.25;
+  letter-spacing: -0.011em;
+  margin: 0 0 var(--space-sm);
 }
 
 h1 {
-  font-size: 2rem;
-  margin: 0 0 8px;
+  font-size: var(--text-3xl);
+  font-weight: 700;
+}
+h2 {
+  font-size: var(--text-2xl);
+  font-weight: 650;
+}
+h3 {
+  font-size: var(--text-xl);
+  font-weight: 600;
 }
 
+p {
+  margin: 0 0 var(--space-md);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+/* ----------------------------------------------------------------------------
+   Layout containers
+   ---------------------------------------------------------------------------- */
+.container {
+  max-width: var(--container-narrow);
+  margin: 0 auto;
+  padding: var(--space-2xl) var(--space-lg);
+}
+
+/* Wide variant for data-dense pages (admin, analytics). Opt-in per page. */
+.container--wide {
+  max-width: var(--container-max);
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: var(--space-xl) var(--space-md);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Cards / surfaces
+   ---------------------------------------------------------------------------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  margin-top: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.card--interactive {
+  cursor: pointer;
+  transition: box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.card--interactive:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-accent);
+}
+
+/* ----------------------------------------------------------------------------
+   Typography helpers
+   ---------------------------------------------------------------------------- */
 .muted {
-  color: var(--muted);
+  color: var(--color-muted-foreground);
 }
 
+/* ----------------------------------------------------------------------------
+   Forms
+   ---------------------------------------------------------------------------- */
 label {
   display: block;
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin: 12px 0 4px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-secondary);
+  margin: var(--space-md) 0 var(--space-xs);
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-foreground);
   padding: 10px 12px;
   font: inherit;
+  font-size: var(--text-base);
+  transition: border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-muted-foreground);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------------------
+   Buttons
+   ---------------------------------------------------------------------------- */
 button {
-  margin-top: 16px;
-  background: var(--accent);
-  color: white;
-  border: 0;
-  border-radius: 8px;
+  margin-top: var(--space-md);
+  background: var(--color-accent);
+  color: var(--color-on-primary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   padding: 10px 18px;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 button:hover {
-  background: var(--accent-hover);
+  background: var(--color-accent-hover);
 }
 
 button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
+/* ----------------------------------------------------------------------------
+   Feedback / status
+   ---------------------------------------------------------------------------- */
 .error {
-  color: #ff6b6b;
-  margin-top: 12px;
+  color: var(--color-destructive);
+  margin-top: var(--space-md);
+  font-size: var(--text-sm);
 }
 
 .citation {
-  border-left: 3px solid var(--accent);
-  padding: 4px 12px;
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 0.9rem;
+  border-left: 3px solid var(--color-accent);
+  background: var(--surface-2);
+  padding: var(--space-sm) var(--space-md);
+  margin-top: var(--space-sm);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--color-secondary);
+  font-size: var(--text-sm);
 }
 
 .badge {
   display: inline-block;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
   padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--border);
-  color: var(--text);
+  border-radius: var(--radius-pill);
+  background: var(--color-muted);
+  color: var(--color-secondary);
 }
 
-/* Mode tabs (Ask / Objection lookup) */
+/* ----------------------------------------------------------------------------
+   Tabs (Ask / Objection lookup)
+   ---------------------------------------------------------------------------- */
 .tabs {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
 }
 
 .tab {
   background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  border-radius: var(--radius-pill);
   padding: 6px 14px;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
-.tab.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+.tab:hover {
+  background: var(--surface-2);
+  color: var(--color-foreground);
 }
 
-/* One-click objection / ramp prompt chips */
+.tab.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-primary);
+}
+
+.tab.active:hover {
+  background: var(--color-accent-hover);
+}
+
+/* ----------------------------------------------------------------------------
+   Chips (one-click objection / ramp prompts)
+   ---------------------------------------------------------------------------- */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
 }
 
 .chip {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  border-radius: var(--radius-pill);
   padding: 8px 14px;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   font-weight: 500;
+  transition: border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .chip:hover {
-  border-color: var(--accent);
-  background: var(--bg);
+  border-color: var(--color-accent);
+  background: var(--surface-2);
 }
 
-/* Confidence / held-answer banner */
+/* ----------------------------------------------------------------------------
+   Banners (confidence / held-answer / status)
+   ---------------------------------------------------------------------------- */
 .banner {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 10px 14px;
-  font-size: 0.85rem;
-  margin: 0 0 12px;
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-md);
+  border: 1px solid transparent;
 }
 
 .banner.warn {
-  background: rgba(255, 184, 77, 0.12);
-  border: 1px solid rgba(255, 184, 77, 0.4);
-  color: #ffce8a;
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+  color: var(--color-warning);
 }
 
+.banner.error {
+  background: var(--color-destructive-bg);
+  border-color: var(--color-destructive);
+  color: var(--color-destructive);
+}
+
+.banner.success {
+  background: var(--color-success-bg);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+/* ----------------------------------------------------------------------------
+   Streaming answer cursor
+   ---------------------------------------------------------------------------- */
 .streaming-cursor::after {
   content: "▍";
   animation: blink 1s steps(2, start) infinite;
-  color: var(--accent);
+  color: var(--color-accent);
 }
 
 @keyframes blink {
   to {
     visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

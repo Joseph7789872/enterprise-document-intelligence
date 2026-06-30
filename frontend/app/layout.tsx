@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { LEGAL } from "@/lib/legal";
+import { Inter } from "next/font/google";
+import { LayoutFrame } from "@/components/LayoutFrame";
 import "./globals.css";
+import "@/components/ui.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
   title: "Sales Assistant",
@@ -9,43 +16,15 @@ export const metadata: Metadata = {
     "Cited, grounded answers from your sales playbooks — ramp new reps fast and prep for objections.",
 };
 
-// Minimal, undesigned footer so the legal/trust pages are discoverable. The design pass
-// will restyle this.
-function SiteFooter() {
-  return (
-    <footer
-      className="muted"
-      style={{
-        marginTop: 48,
-        paddingTop: 16,
-        borderTop: "1px solid var(--border)",
-        fontSize: "0.85rem",
-        display: "flex",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <Link href="/privacy">Privacy</Link>
-      <Link href="/terms">Terms</Link>
-      <Link href="/dpa">DPA</Link>
-      <Link href="/security">Security</Link>
-      <span style={{ marginLeft: "auto" }}>© {LEGAL.company}</span>
-    </footer>
-  );
-}
-
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <body>
-        <div className="container">
-          {children}
-          <SiteFooter />
-        </div>
+        <LayoutFrame>{children}</LayoutFrame>
       </body>
     </html>
   );

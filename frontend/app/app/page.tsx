@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type Citation,
   type ConversationInfo,
+  type CurrentUser,
   type SavedObjection,
   type Segment,
   clearToken,
@@ -13,12 +13,21 @@ import {
   getConversation,
   getMe,
   getToken,
-  isManager,
   listConversations,
   listObjections,
   listSegments,
   streamAnswer,
 } from "@/lib/api";
+import {
+  AppShell,
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Chip,
+  Tabs,
+  Textarea,
+} from "@/components";
 
 // Mirrors the backend CONFIDENCE_THRESHOLD: below this we surface an honest
 // "not fully sure" banner rather than presenting the answer as definitive.
@@ -52,6 +61,7 @@ function newTurn(question: string): Turn {
 export default function ChatPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [user, setUser] = useState<CurrentUser | null>(null);
   // Guards the /app?q=… deep-link so it auto-runs exactly once per mount.
   const autoRan = useRef(false);
 
@@ -59,7 +69,6 @@ export default function ChatPage() {
   const [objections, setObjections] = useState<SavedObjection[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [segmentFilter, setSegmentFilter] = useState<string>("");
-  const [manager, setManager] = useState(false);
 
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -89,7 +98,7 @@ export default function ChatPage() {
     // redirect. Only mark ready — and fire the dependent loads — once /auth/me succeeds.
     getMe()
       .then((u) => {
-        setManager(isManager(u.role));
+        setUser(u);
         setReady(true);
         listObjections().then(setObjections).catch(() => {});
         listSegments().then(setSegments).catch(() => {});
@@ -212,52 +221,29 @@ export default function ChatPage() {
 
   if (!ready) return null;
 
-  function signOut() {
-    clearToken();
-    router.push("/login");
-  }
-
   return (
-    <main>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Sales Assistant</h1>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Link href="/ramp" className="muted" style={{ fontSize: "0.9rem" }}>
-            Ramp checklist
-          </Link>
-          {manager && (
-            <Link href="/admin" className="muted" style={{ fontSize: "0.9rem" }}>
-              Admin
-            </Link>
-          )}
-          {manager && (
-            <Link href="/analytics" className="muted" style={{ fontSize: "0.9rem" }}>
-              Analytics
-            </Link>
-          )}
-          <Link href="/log" className="muted" style={{ fontSize: "0.9rem" }}>
-            History
-          </Link>
-          <button onClick={signOut} style={{ marginTop: 0 }}>
-            Sign out
-          </button>
-        </div>
-      </div>
-      <p className="muted" style={{ marginTop: 0 }}>
-        Ask anything about your product, pricing, ICP, or competition — or look up an
-        objection. Follow-up questions keep the thread&apos;s context. Every answer is
-        grounded in your team&apos;s playbooks and cited.
-      </p>
+    <AppShell user={user}>
+      <header className="page-head">
+        <h1 className="page-head__title">Ask</h1>
+        <p className="page-head__sub">
+          Ask anything about your product, pricing, ICP, or competition — or look up an
+          objection. Follow-up questions keep the thread&apos;s context, and every answer is
+          grounded in your team&apos;s playbooks and cited.
+        </p>
+      </header>
 
       {/* Thread controls */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-        <button onClick={startNewChat} disabled={streaming} style={{ marginTop: 0 }}>
+      <div className="chat-toolbar">
+        <Button variant="secondary" size="sm" onClick={startNewChat} disabled={streaming}>
           New chat
-        </button>
+        </Button>
         {conversations.length > 0 && (
           <select
+            className="ui-field__control chat-select"
             value={conversationId ?? ""}
-            onChange={(e) => (e.target.value ? switchThread(e.target.value) : startNewChat())}
+            onChange={(e) =>
+              e.target.value ? switchThread(e.target.value) : startNewChat()
+            }
             disabled={streaming}
             aria-label="Switch conversation"
           >
@@ -271,21 +257,16 @@ export default function ChatPage() {
         )}
       </div>
 
-      <div className="card">
-        <div className="tabs">
-          <button
-            className={`tab${mode === "ask" ? " active" : ""}`}
-            onClick={() => setMode("ask")}
-          >
-            Ask a question
-          </button>
-          <button
-            className={`tab${mode === "objection" ? " active" : ""}`}
-            onClick={() => setMode("objection")}
-          >
-            Objection lookup
-          </button>
-        </div>
+      <Card>
+        <Tabs<Mode>
+          aria-label="Answer mode"
+          value={mode}
+          onChange={setMode}
+          items={[
+            { value: "ask", label: "Ask a question" },
+            { value: "objection", label: "Objection lookup" },
+          ]}
+        />
 
         {mode === "ask" ? (
           <form
@@ -296,112 +277,114 @@ export default function ChatPage() {
               void ask(q);
             }}
           >
-            <label htmlFor="q">{turns.length > 0 ? "Follow-up question" : "Question"}</label>
-            <textarea
-              id="q"
+            <Textarea
+              label={turns.length > 0 ? "Follow-up question" : "Question"}
               rows={3}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="e.g. How is our product priced and packaged?"
               required
             />
-            <button type="submit" disabled={streaming || !question.trim()}>
-              {streaming ? "Thinking…" : "Ask"}
-            </button>
+            <div className="composer__actions">
+              <Button type="submit" loading={streaming} disabled={!question.trim()}>
+                {streaming ? "Thinking…" : "Ask"}
+              </Button>
+            </div>
           </form>
         ) : (
           <>
-            <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+            <p className="muted" style={{ fontSize: "var(--text-sm)", marginTop: "var(--space-md)" }}>
               Pick a common objection and get a fast, cited way to handle it.
             </p>
             {segments.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <label htmlFor="seg" style={{ fontSize: "0.85rem" }}>
-                  Filter by segment
-                </label>
-                <select
-                  id="seg"
-                  value={segmentFilter}
-                  onChange={(e) => setSegmentFilter(e.target.value)}
-                >
-                  <option value="">All segments</option>
-                  {segments.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                className="ui-field__control chat-select"
+                aria-label="Filter by segment"
+                value={segmentFilter}
+                onChange={(e) => setSegmentFilter(e.target.value)}
+                style={{ marginBottom: "var(--space-md)" }}
+              >
+                <option value="">All segments</option>
+                {segments.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
             )}
             {objections.length === 0 ? (
-              <p className="muted" style={{ fontSize: "0.85rem" }}>
-                No saved objections{segmentFilter ? " for this segment" : " yet"}. Your manager
-                can add them in the admin area.
+              <p className="muted" style={{ fontSize: "var(--text-sm)" }}>
+                No saved objections{segmentFilter ? " for this segment" : " yet"}. Your
+                manager can add them in the admin area.
               </p>
             ) : (
               <div className="chips">
                 {objections.map((o) => (
-                  <button
-                    key={o.id}
-                    className="chip"
-                    disabled={streaming}
-                    onClick={() => void ask(o.prompt)}
-                  >
+                  <Chip key={o.id} disabled={streaming} onClick={() => void ask(o.prompt)}>
                     {o.label}
-                  </button>
+                  </Chip>
                 ))}
               </div>
             )}
           </>
         )}
-      </div>
+      </Card>
 
       {/* Transcript: every turn in the active thread, oldest first. */}
-      {turns.map((turn, i) => (
-        <div className="card" key={i}>
-          <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-            <strong style={{ color: "var(--text)" }}>You asked:</strong> {turn.question}
-          </p>
+      <div className="chat-stack">
+        {turns.map((turn, i) => (
+          <Card key={i}>
+            <p className="chat-turn__q">
+              <strong>You asked:</strong> {turn.question}
+            </p>
 
-          {turn.error ? (
-            <p className="error">{turn.error}</p>
-          ) : turn.held ? (
-            <div className="banner warn">
-              I couldn&apos;t find enough in your playbooks to answer this confidently. Try
-              rephrasing, or ask your manager to add supporting content.
-            </div>
-          ) : (
-            <>
-              {!turn.streaming &&
-                turn.confidence != null &&
-                turn.confidence < LOW_CONFIDENCE && (
-                  <div className="banner warn">
-                    I&apos;m not fully sure on this one — here&apos;s what I found in your
-                    playbooks. Double-check the sources below before relying on it.
+            {turn.error ? (
+              <Banner tone="error">{turn.error}</Banner>
+            ) : turn.held ? (
+              <Banner tone="warn">
+                I couldn&apos;t find enough in your playbooks to answer this confidently.
+                Try rephrasing, or ask your manager to add supporting content.
+              </Banner>
+            ) : (
+              <>
+                {!turn.streaming &&
+                  turn.confidence != null &&
+                  turn.confidence < LOW_CONFIDENCE && (
+                    <Banner tone="warn" style={{ marginBottom: "var(--space-md)" }}>
+                      I&apos;m not fully sure on this one — here&apos;s what I found in your
+                      playbooks. Double-check the sources below before relying on it.
+                    </Banner>
+                  )}
+                <p className={turn.streaming ? "chat-answer streaming-cursor" : "chat-answer"}>
+                  {turn.answer}
+                </p>
+                {!turn.streaming && turn.confidence != null && (
+                  <div className="chat-meta">
+                    <span className="muted" style={{ fontSize: "var(--text-xs)" }}>
+                      Confidence
+                    </span>
+                    <Badge
+                      tone={turn.confidence < LOW_CONFIDENCE ? "warning" : "success"}
+                    >
+                      {(turn.confidence * 100).toFixed(0)}%
+                    </Badge>
                   </div>
                 )}
-              <p className={turn.streaming ? "streaming-cursor" : ""} style={{ marginTop: 0 }}>
-                {turn.answer}
-              </p>
-              {!turn.streaming && turn.confidence != null && (
-                <p className="muted" style={{ fontSize: "0.85rem" }}>
-                  Confidence: {(turn.confidence * 100).toFixed(0)}%
-                </p>
-              )}
-              {turn.citations.length > 0 && (
-                <>
-                  <h3>Sources</h3>
-                  {turn.citations.map((c) => (
-                    <div className="citation" key={c.chunk_id}>
-                      [{c.marker}] {c.filename} — {c.snippet}
-                    </div>
-                  ))}
-                </>
-              )}
-            </>
-          )}
-        </div>
-      ))}
-    </main>
+                {turn.citations.length > 0 && (
+                  <div className="chat-sources">
+                    <p className="chat-sources__label">Sources</p>
+                    {turn.citations.map((c) => (
+                      <div className="citation" key={c.chunk_id}>
+                        [{c.marker}] {c.filename} — {c.snippet}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+        ))}
+      </div>
+    </AppShell>
   );
 }
